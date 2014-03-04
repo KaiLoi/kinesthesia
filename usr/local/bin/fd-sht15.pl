@@ -9,7 +9,9 @@
 ##
 ## v1: 		First implementation of a Fetish Daemon for the 
 ##			Kinethesia SW/HW framework.
-##
+## v1.1: 	Adding proper XML handling of values for passing from
+##			the FD to the TD.
+##	
 
 use strict;
 use warnings;
@@ -71,7 +73,8 @@ if ($cfg{'fd-sht15'}{'cacrt'}) {
 	print "= I = Loading CA certificate from config file: $cacrt\n" if ($debug == 1);
 }
 
-
+# Global hash for storing the env details returned by this FD.
+my %env;
 
 # Environmentals provided by this server
 my $temp = 0;
@@ -117,6 +120,12 @@ POE::Session->create(
 			my @values;
 			print "\n= I = Polling fetish for environmental values and populating variables\n" if ($debug == 1);
 			@values = split(',', `/usr/local/bin/f-sht15.py`);
+			$env{'temp'} = $values[0];
+			$env{'humidity'} = $values[1];
+			$env{'dewpoint'} = $values[2];
+			chomp($env{'temp'});
+			chomp($env{'humidity'});
+			chomp($env{'dewpoint'});
 			$temp = $values[0];
 			$humidity = $values[1];
 			$dewpoint = $values[2];
@@ -214,6 +223,9 @@ sub socket_input {
 	my $response = "";
 	my $value = "";
 	my $sub;
+	my $hashref;
+	my $xs;
+	my $xml;
 	chomp($buf);
 	print "= I = Clint command received : $buf\n" if ($debug == 1);
 	print "= SSL = Authing Client Command\n" if ($debug == 1);
@@ -225,11 +237,17 @@ sub socket_input {
 			$value = $dewpoint;
 		} elsif ($buf eq "humidity") {
 			$value = $humidity;
+		} elsif ($buf eq "all") {
+			$hashref = \%env;
+			$xs = new XML::Simple;
+			$xml = $xs->XMLout($hashref, NoAttr => 1,RootName => 'sht15');
+			$value = $xml;
+			#return all value
 		} else {
 			$value = "Unknown request\n";
 		}
 		$response = $value;
-		print "= I = Sending Client Result:  $response\n" if ($debug == 1);
+		print "= I = Sending Client Result:\n\n$response\n" if ($debug == 1);
 		$heap->{socket_wheel}->put($response);
 	} else {
 		print "= SSL = Client Certificate Invalid! Rejecting command and disconnecting!\n" if ($debug == 1);
