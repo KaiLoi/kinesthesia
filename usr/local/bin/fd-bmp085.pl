@@ -2,13 +2,13 @@
 
 ######################################################################
 ######################################################################
-## fd-sht15.pl: Fetish daemon for managing and interfacing to the
-## sht15 digital humidity and temperature sensor.
+## fd-bmp085.pl: Fetish daemon for managing and interfacing to the
+## bmp085 pressuresensor.
 ## 
-## Written by Kai Rigby - 25/02/2014
+## Written by Kai Rigby - 04/03/2014
 ##
-## v1: 		First implementation of a Fetish Daemon for the 
-##			Kinethesia SW/HW framework.
+## v1: 		First implementation of the bmp085 fetishdaemon for  
+##			the kinethesia framework.
 ##
 
 use strict;
@@ -26,7 +26,7 @@ use POE qw(
 	Filter::Stream
 );
 
-my $configfile = "/home/pi/c0de/fetish-daemons/fd-sht15/talismandaemon.conf";
+my $configfile = "/etc/kinethesia/talismandaemon.conf";
 my %cfg;
 print "= I = Reading in config file: $configfile\n";
 tie %cfg, 'Config::IniFiles', ( -file => $configfile );
@@ -35,48 +35,46 @@ print "= I = Config file read\n";
 # Set up default values or the below. All overridable in the config file. 
 my $daemon = 0;
 my $debug = 0;
-my $daemonport = 2001;
+my $daemonport = 2002;
 my $bindaddress = "127.0.0.1";
 my $pollperiod = 30;
 my $serverkey = "/etc/kinethesia/certs/server.key";
 my $servercrt = "/etc/kinethesia/certs/server.crt";
 my $cacrt = "/etc/kinethesia/certs/ca.crt";
 
-if ($cfg{'fd-sht15'}{'debug'}) {
-	$debug = $cfg{'fd-sht15'}{'debug'};
+if ($cfg{'fd-bmp085'}{'debug'}) {
+	$debug = $cfg{'fd-bmp085'}{'debug'};
 	print "\n= I = Loading Debug Setting from config file: $debug\n" if ($debug == 1);
 }
-if ($cfg{'fd-sht15'}{'daemonport'}) {
-	$daemonport = $cfg{'fd-sht15'}{'daemonport'};
+if ($cfg{'fd-bmp085'}{'daemonport'}) {
+	$daemonport = $cfg{'fd-bmp085'}{'daemonport'};
 	print "= I = Loading daemon port from config file: $daemonport\n" if ($debug == 1);
 }
-if ($cfg{'fd-sht15'}{'bindaddress'}) {
-	$bindaddress = $cfg{'fd-sht15'}{'bindaddress'};
+if ($cfg{'fd-bmp085'}{'bindaddress'}) {
+	$bindaddress = $cfg{'fd-bmp085'}{'bindaddress'};
 	print "= I = Loading bind address from config file: $bindaddress\n" if ($debug == 1);
 }
-if ($cfg{'fd-sht15'}{'pollperiod'}) {
-	$pollperiod = $cfg{'fd-sht15'}{'pollperiod'};
+if ($cfg{'fd-bmp085'}{'pollperiod'}) {
+	$pollperiod = $cfg{'fd-bmp085'}{'pollperiod'};
 	print "= I = Loading poll period from config file: $pollperiod\n" if ($debug == 1);
 }
-if ($cfg{'fd-sht15'}{'serverkey'}) {
-	$serverkey = $cfg{'fd-sht15'}{'serverkey'};
+if ($cfg{'fd-bmp085'}{'serverkey'}) {
+	$serverkey = $cfg{'fd-bmp085'}{'serverkey'};
 	print "= I = Loading server key from config file: $serverkey\n" if ($debug == 1);
 }
-if ($cfg{'fd-sht15'}{'servercrt'}) {
-	$servercrt = $cfg{'fd-sht15'}{'servercrt'};
+if ($cfg{'fd-bmp085'}{'servercrt'}) {
+	$servercrt = $cfg{'fd-bmp085'}{'servercrt'};
 	print "= I = Loading server certificate from config file: $servercrt\n" if ($debug == 1);
 }
-if ($cfg{'fd-sht15'}{'cacrt'}) {
-	$cacrt = $cfg{'fd-sht15'}{'cacrt'};
+if ($cfg{'fd-bmp085'}{'cacrt'}) {
+	$cacrt = $cfg{'fd-bmp085'}{'cacrt'};
 	print "= I = Loading CA certificate from config file: $cacrt\n" if ($debug == 1);
 }
 
 
 
 # Environmentals provided by this server
-my $temp = 0;
-my $humidity = 0;
-my $dewpoint = 0;
+my $pressure = 0;
 
 
 if ($daemon) {
@@ -114,16 +112,12 @@ POE::Session->create(
 		},
 
 		tick => sub {
-			my @values;
+			my $value;
 			print "\n= I = Polling fetish for environmental values and populating variables\n" if ($debug == 1);
-			@values = split(',', `/usr/local/bin/f-sht15.py`);
-			$temp = $values[0];
-			$humidity = $values[1];
-			$dewpoint = $values[2];
-			chomp($temp);
-			chomp($humidity);
-			chomp($dewpoint);
-			print "= I = Values populated : $temp, $humidity, $dewpoint\n" if ($debug == 1);
+			$value = `/usr/local/bin/f-bmp085.py`;
+			$pressure = $value;
+			chomp($pressure);
+			print "= I = Values populated : $pressure\n" if ($debug == 1);
 			$_[HEAP]->{next_alarm_time} = $_[HEAP]->{next_alarm_time} + $pollperiod;
                         $_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
 		}
@@ -219,12 +213,8 @@ sub socket_input {
 	print "= SSL = Authing Client Command\n" if ($debug == 1);
 	if ($heap->{sslfilter}->clientCertValid()) {
 		print "= SSL = Client Certificate Valid, Authorised\n" if ($debug == 1);
-		if ($buf eq "temp") {
-			$value = $temp;
-		} elsif ($buf eq "dewpoint") { 
-			$value = $dewpoint;
-		} elsif ($buf eq "humidity") {
-			$value = $humidity;
+		if ($buf eq "pressure") {
+			$value = $pressure;
 		} else {
 			$value = "Unknown request\n";
 		}
