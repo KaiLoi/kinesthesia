@@ -277,21 +277,32 @@ sub allresponse {
         my $xs;
         my $xml;
 
-        $hashref = \%env;
-        $xs = new XML::Simple;
-        $xml = $xs->XMLout($hashref, NoAttr => 1,RootName => $myname);
+	if (!%env) {
+		$xml = errresponse("No values from the Fetish! Fetish is either broken or not responding");
+	} else {  
+        	$hashref = \%env;
+        	$xs = new XML::Simple;
+        	$xml = $xs->XMLout($hashref, NoAttr => 1,RootName => $myname);
+	}
         return $xml;
 }
 
 sub pollfetish {
 
 	my @values;
+	my $fetishresponse;
 
-	@values = split(',', `/usr/local/bin/f-sht15.py`);
-	$env{'temp'} = $values[0];
-	$env{'humidity'} = $values[1];
-	$env{'dewpoint'} = $values[2];
-	chomp($env{'dewpoint'});
-	print "= I = Values populated : $env{'temp'}, $env{'humidity'}, $env{'dewpoint'}\n" if ($debug == 1);
+	$fetishresponse = `/usr/local/bin/f-sht15.py`;
+	if (!$fetishresponse) {
+		print "= W = No values from the Fetish! Fetish is either broken or not responding\n" if ($debug == 1);
+		undef %env;
+	} else {
+		@values = split(',', $fetishresponse);
+		$env{'temp'} = $values[0];
+		$env{'humidity'} = $values[1];
+		$env{'dewpoint'} = $values[2];
+		chomp($env{'dewpoint'});
+		print "= I = Values populated : $env{'temp'}, $env{'humidity'}, $env{'dewpoint'}\n" if ($debug == 1);
+	}
 }
 ### END OF LINE ###
