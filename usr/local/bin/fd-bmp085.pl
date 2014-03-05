@@ -3,13 +3,15 @@
 ######################################################################
 ######################################################################
 ## fd-bmp085.pl: Fetish daemon for managing and interfacing to the
-## bmp085 pressuresensor.
+## bmp085 digital humidity and temperature sensor.
 ## 
-## Written by Kai Rigby - 04/03/2014
+## Written by Kai Rigby - 25/02/2014
 ##
-## v1: 		First implementation of the bmp085 fetishdaemon for  
-##			the kinethesia framework.
-##
+## v1: 		First implementation of a Fetish Daemon for the 
+##			Kinethesia SW/HW framework.
+## v1.1: 	Adding proper XML handling of values for passing from
+##			the FD to the TD.
+##	
 
 use strict;
 use warnings;
@@ -32,7 +34,8 @@ print "= I = Reading in config file: $configfile\n";
 tie %cfg, 'Config::IniFiles', ( -file => $configfile );
 print "= I = Config file read\n";
 
-# Set up default values or the below. All overridable in the config file. 
+# Set up default values or the below. All values are overridable in the config file. 
+my $myname = "bmp085";
 my $daemon = 0;
 my $debug = 0;
 my $daemonport = 2002;
@@ -71,12 +74,10 @@ if ($cfg{'fd-bmp085'}{'cacrt'}) {
 	print "= I = Loading CA certificate from config file: $cacrt\n" if ($debug == 1);
 }
 
+# Global hash for storing the env details returned by this FD.
+my %env;
 
-
-# Environmentals provided by this server
-my $pressure = 0;
-
-
+# Set to run as a Daemon or not for debug. 
 if ($daemon) {
         fork and exit;
 }
@@ -85,9 +86,8 @@ if ($daemon) {
 # and needs to print to term.
 $| = 1;
 
-# read in the config then start all the POE sessions.
-# readconfig():
 
+# POE session for the SSL TCP server to listen for client queries and respond with the appropreate values. 
 POE::Session->create(
 	inline_states => {
     		_start => \&parent_start,
@@ -105,19 +105,14 @@ POE::Session->create(
 	inline_states => {
 		_start => sub {
 			print "\n= I = Starting fetish polling Session with a polling period of $pollperiod\n" if ($debug == 1);
-#			$_[HEAP]->{next_alarm_time} = int(time()) + $pollperiod;
 			$_[HEAP]->{next_alarm_time} = int(time());
 			$_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
 			print "= I = Fetish Polling session started\n" if ($debug == 1);
 		},
 
 		tick => sub {
-			my $value;
 			print "\n= I = Polling fetish for environmental values and populating variables\n" if ($debug == 1);
-			$value = `/usr/local/bin/f-bmp085.py`;
-			$pressure = $value;
-			chomp($pressure);
-			print "= I = Values populated : $pressure\n" if ($debug == 1);
+			pollfetish();
 			$_[HEAP]->{next_alarm_time} = $_[HEAP]->{next_alarm_time} + $pollperiod;
                         $_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
 		}
@@ -206,28 +201,80 @@ sub socket_success {
 sub socket_input {
 	my ($heap, $kernel, $buf) = @_[HEAP, KERNEL, ARG0];
 	my $response = "";
-	my $value = "";
 	my $sub;
-	chomp($buf);
-	print "= I = Clint command received : $buf\n" if ($debug == 1);
+	my $command;
+	my $refresh;
+	my $ref;
+	$ref = XMLin($buf);
+	print "= I = Client command received :\n\n$buf\n" if ($debug == 1);
 	print "= SSL = Authing Client Command\n" if ($debug == 1);
 	if ($heap->{sslfilter}->clientCertValid()) {
 		print "= SSL = Client Certificate Valid, Authorised\n" if ($debug == 1);
-		if ($buf eq "pressure") {
-			$value = $pressure;
-		} else {
-			$value = "Unknown request\n";
+		# If the talisman Daemon requests a realtime value from the fetish, update the values 
+		# and return them. Note this will slow down the query response. 
+		if ($ref->{'immediate'}) {
+			print "\n= I = Clint has requested realtime fetish values, refreshing.\n" if ($debug == 1);
+			pollfetish();
 		}
-		$response = $value;
-		print "= I = Sending Client Result:  $response\n" if ($debug == 1);
+		# The option is available here ti query the Fetish Daemon for only specific values.
+		# the decision at this time is to only ask for everything it has and filter to the 
+		# shadow at the telisman daemon level. But this can be changed at a later time for 
+		# additional filtering and traffic efficiency on low bandwidth links.
+		if ($ref->{'command'} eq "all") {
+			$response = allresponse();
+		} else {
+			$response = errresponse("Unknown query command sent to fetish daemon $myname");
+		}
+		print "= I = Sending Client Result:\n\n$response\n" if ($debug == 1);
 		$heap->{socket_wheel}->put($response);
 	} else {
 		print "= SSL = Client Certificate Invalid! Rejecting command and disconnecting!\n" if ($debug == 1);
-		$response = "INVALID CERT! Connection rejected!\n";
-		print "= I = Sending Client Result:  $response\n" if ($debug == 1);
+		$response = errresponse("INVALID CERT! Connection rejected!");
+		print "= I = Sending Client Result:\n$response\n" if ($debug == 1);
 		$heap->{socket_wheel}->put($response);
 		$kernel->delay(socket_death => 1);
 	}
 }
 
 $poe_kernel->run();
+
+#### NON POE subs below this line
+
+sub errresponse {
+
+	my $msg = shift;
+	my %err;
+	my $hashref;
+	my $xs;
+	my $xml;
+
+	$err{'msg'} = $msg;
+	$hashref = \%err;
+	$xs = new XML::Simple;
+	$xml = $xs->XMLout($hashref, NoAttr => 1,RootName => 'error');
+	return $xml;
+}
+
+sub allresponse {
+
+        my $resp;
+        my $hashref;
+        my $xs;
+        my $xml;
+
+        $hashref = \%env;
+        $xs = new XML::Simple;
+        $xml = $xs->XMLout($hashref, NoAttr => 1,RootName => $myname);
+        return $xml;
+}
+
+sub pollfetish {
+
+	my @values;
+
+	@values = split(',', `/usr/local/bin/f-bmp085.py`);
+	$env{'pressure'} = $values[0];
+	chomp($env{'pressure'});
+	print "= I = Values populated : $env{'pressure'}\n" if ($debug == 1);
+}
+### END OF LINE ###
