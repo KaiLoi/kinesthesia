@@ -31,13 +31,13 @@ use POE qw(
 my $configfile = "/etc/kinethesia/talismandaemon.conf";
 my %cfg;
 print "= I = Reading in config file: $configfile\n";
-tie %cfg, 'Config::IniFiles', ( -file => $configfile );
+tie %cfg, 'Config::IniFiles', ( -file => $configfile ) or die "Failed to create Config::IniFiles object: @Config::IniFiles::errors\n";
 print "= I = Config file read\n";
 
 # Set up default values or the below. All values are overridable in the config file. 
 my $myname = "sht15";
 my $daemon = 0;
-my $debug = 0;
+my $debug = 1;
 my $daemonport = 2001;
 my $bindaddress = "127.0.0.1";
 my $pollperiod = 30;
@@ -53,23 +53,38 @@ if ($cfg{'fd-sht15'}{'daemonport'}) {
 	$daemonport = $cfg{'fd-sht15'}{'daemonport'};
 	print "= I = Loading daemon port from config file: $daemonport\n" if ($debug == 1);
 }
-if ($cfg{'fd-sht15'}{'bindaddress'}) {
+if ($cfg{'GlobalFetishD'}{'bindaddress'}) {
+	$bindaddress = $cfg{'GlobalFetishD'}{'bindaddress'};
+	print "= I = Loading Global bind address from config file: $bindaddress\n" if ($debug == 1);
+} elsif ($cfg{'fd-sht15'}{'bindaddress'}) {
 	$bindaddress = $cfg{'fd-sht15'}{'bindaddress'};
-	print "= I = Loading bind address from config file: $bindaddress\n" if ($debug == 1);
-}
-if ($cfg{'fd-sht15'}{'pollperiod'}) {
+        print "= I = Loading bind address from config file: $bindaddress\n" if ($debug == 1);
+} 
+if ($cfg{'GlobalFetishD'}{'pollperiod'}) {
+	$pollperiod = $cfg{'GlobalFetishD'}{'pollperiod'};
+	print "= I = Loading Global poll period from config file: $pollperiod\n" if ($debug == 1);
+} elsif ($cfg{'fd-sht15'}{'pollperiod'}) {
 	$pollperiod = $cfg{'fd-sht15'}{'pollperiod'};
 	print "= I = Loading poll period from config file: $pollperiod\n" if ($debug == 1);
 }
-if ($cfg{'fd-sht15'}{'serverkey'}) {
+if ($cfg{'GlobalFetishD'}{'serverkey'}) {
+        $serverkey = $cfg{'GlobalFetishD'}{'serverkey'};
+        print "= I = Loading Global Server Key from config file: $serverkey\n" if ($debug == 1);
+} elsif ($cfg{'fd-sht15'}{'serverkey'}) {
 	$serverkey = $cfg{'fd-sht15'}{'serverkey'};
 	print "= I = Loading server key from config file: $serverkey\n" if ($debug == 1);
 }
-if ($cfg{'fd-sht15'}{'servercrt'}) {
+if ($cfg{'GlobalFetishD'}{'servercrt'}) {
+        $servercrt = $cfg{'GlobalFetishD'}{'servercrt'};
+        print "= I = Loading Global Server Certificate from config file: $servercrt\n" if ($debug == 1);
+} elsif ($cfg{'fd-sht15'}{'servercrt'}) {
 	$servercrt = $cfg{'fd-sht15'}{'servercrt'};
 	print "= I = Loading server certificate from config file: $servercrt\n" if ($debug == 1);
 }
-if ($cfg{'fd-sht15'}{'cacrt'}) {
+if ($cfg{'GlobalFetishD'}{'cacrt'}) {
+        $cacrt = $cfg{'GlobalFetishD'}{'cacrt'};
+        print "= I = Loading Global CA Certificate from config file: $cacrt\n" if ($debug == 1); 
+} elsif ($cfg{'fd-sht15'}{'cacrt'}) {
 	$cacrt = $cfg{'fd-sht15'}{'cacrt'};
 	print "= I = Loading CA certificate from config file: $cacrt\n" if ($debug == 1);
 }
