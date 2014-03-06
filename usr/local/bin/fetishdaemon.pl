@@ -41,6 +41,11 @@ print "= I = Reading in config file: $configfile\n";
 tie %cfg, 'Config::IniFiles', ( -file => $configfile ) or die "Failed to create Config::IniFiles object: @Config::IniFiles::errors\n";
 print "= I = Config file read\n";
 
+if (!$cfg{"fd-$fetish"}) {
+	print "\n= C = No config found in $configfile for fetish: $fetish. Exiting.\n\n";
+	exit(1);
+}
+
 # Set up default values or the below. All values are overridable in the config file. 
 my $daemon = 0;
 my $debug = 1;
