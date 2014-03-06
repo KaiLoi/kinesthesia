@@ -33,4 +33,5 @@ bmp = Adafruit_BMP085.BMP085(0x77)
 # altitude = bmp.readAltitude(102350)
 
 pressure = bmp.readPressure()
-print pressure / 100.0
+pressure = pressure /100.0
+print ("pressure:%s") % (pressure)

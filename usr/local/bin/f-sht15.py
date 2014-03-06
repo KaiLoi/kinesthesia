@@ -10,4 +10,4 @@ humidity = sht1x.read_humidity()
 dewPoint = sht1x.calculate_dew_point(temperature, humidity)
 
 #print("Temperature: {} Humidity: {} Dew Point: {}".format(temperature, humidity, dewPoint))
-print ("%s,%s,%s") % (temperature, humidity, dewPoint)
+print ("temp:%s,humidity:%s,dewpoint:%s") % (temperature, humidity, dewPoint)
