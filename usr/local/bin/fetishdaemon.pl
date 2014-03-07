@@ -48,7 +48,7 @@ if (!$cfg{"fd-$fetish"}) {
 
 # Set up default values or the below. All values are overridable in the config file. 
 my $daemon = 0;
-my $debug = 1;
+my $debug = 0;
 my $daemonport = 2001;
 my $bindaddress = "127.0.0.1";
 my $pollperiod = 30;
@@ -100,6 +100,10 @@ if ($cfg{'GlobalFetishD'}{'cacrt'}) {
 	print "= I = Loading CA certificate from config file: $cacrt\n" if ($debug == 1);
 }
 
+# set uo the environmental queries and set any warnimg or critical levels that might be set for 
+# alerts. 
+setupenvironmentals();
+
 # Global hash for storing the env details returned by this FD.
 my %env;
 
@@ -111,7 +115,6 @@ if ($daemon) {
 # set print to flush immediatly, this is for the when debug is set high 
 # and needs to print to term.
 $| = 1;
-
 
 # POE session for the SSL TCP server to listen for client queries and respond with the appropreate values. 
 POE::Session->create(
@@ -248,6 +251,8 @@ sub socket_input {
 		# additional filtering and traffic efficiency on low bandwidth links.
 		if ($ref->{'command'} eq "all") {
 			$response = allresponse();
+		} elsif ($ref->{'command'} eq "poll") {
+			$response = pollreponse();
 		} else {
 			$response = errresponse("Unknown query command sent to fetish daemon $fetish");
 		}
@@ -298,6 +303,56 @@ sub allresponse {
         return $xml;
 }
 
+sub pollreponse {
+
+        my %poll;
+        my $hashref;
+        my $xs;
+        my $xml;
+
+        $poll{'value'} = "OK";
+        $hashref = \%poll;
+        $xs = new XML::Simple;
+        $xml = $xs->XMLout($hashref, NoAttr => 1,RootName => 'response');
+        return $xml;
+}
+	
+sub setupenvironmentals {
+	
+	my @environmentals;
+	my @values;
+	my @temp;
+	my $envtemp;
+	my $warnval = "";
+	my $critval = "";
+
+	@environmentals = split(',', $cfg{"fd-$fetish"}{'environmentals'});
+	undef($cfg{"fd-$fetish"}{'environmentals'});
+	foreach (@environmentals) {
+		if ($_ =~ m/:/) {
+			@temp = split(':', $_);
+			if (@temp == 2) {
+				$envtemp = $temp[0];
+				$warnval = $temp[1];
+				print "= I = Populating Environmental $envtemp with Warning Level $warnval\n" if ($debug == 1);
+				$cfg{"fd-$fetish"}{'environmentals'}{$envtemp}{'warn'} = $warnval;
+				$cfg{"fd-$fetish"}{'environmentals'}{$envtemp}{'crit'} = "";
+			} elsif (@temp == 3) {
+				$envtemp = $temp[0];
+				$warnval = $temp[1];
+				$critval = $temp[2];
+				print "= I = Populating Environmental $temp[0] with Warning Level $temp[1] and critical level $temp[2]\n" if ($debug == 1);
+				$cfg{"fd-$fetish"}{'environmentals'}{"$envtemp"}{'warn'} = $temp[1];
+				$cfg{"fd-$fetish"}{'environmentals'}{"$envtemp"}{'crit'} = $temp[2];
+			}
+		} else {
+			print "= I = No alert levels configured for this environmental $_\n" if ($debug == 1);
+			$cfg{"fd-$fetish"}{'environmentals'}{$_}{'warn'} = "";
+			$cfg{"fd-$fetish"}{'environmentals'}{$_}{'crit'} = "";
+		}
+	}
+}
+
 sub pollfetish {
 
 	my @values;
@@ -306,6 +361,9 @@ sub pollfetish {
 	my %keyval;
 	my $fetishresponse;
 	my @environmentals;
+	my $pollval;
+	my $critval;
+	my $warnval;
 
 	$fetishresponse = `/usr/local/bin/f-$fetish.py`;
 	chomp($fetishresponse);
@@ -313,7 +371,7 @@ sub pollfetish {
 		print "= W = No values from the Fetish! Fetish is either broken or not responding\n" if ($debug == 1);
 		undef %env;
 	} else {
-		@environmentals = split(',', $cfg{"fd-$fetish"}{'environmentals'});
+		@environmentals = keys($cfg{"fd-$fetish"}{'environmentals'});
 		@values = split(',', $fetishresponse);
 		if (@environmentals < @values) {
 			print "= W = Fetish returned more environmental values than are defined in your cfg file, have you forgotten to define an environmental? (You could just be filtering in which case ignore this message)\n" if ($debug == 1);
@@ -326,13 +384,28 @@ sub pollfetish {
 			if (!$keyval{"$_"}) {
 				print "= W = Fetsh did not provide environmental $_ that is defined in the cfg file, Are you sure this fetish can give you this value?\n" if ($debug == 1);
 			} else { 
-				$env{"$_"} = $keyval{"$_"};
+				$env{"$_"}{'value'} = $keyval{"$_"};
+				$pollval = $keyval{"$_"};
+				$warnval = $cfg{"fd-$fetish"}{'environmentals'}{"$_"}{'warn'};
+				$critval = $cfg{"fd-$fetish"}{'environmentals'}{"$_"}{'crit'};
+				if ($critval) { 
+					if ($env{"$_"}{'value'} >= $cfg{"fd-$fetish"}{'environmentals'}{"$_"}{'crit'}) {
+						print "= C = CRITICAL!: Polled value for $_ of $pollval exceeds configured critical value for this environmental of $critval! Raising CRITICAL ALERT\n" if ($debug == 1);
+					}
+				} elsif ($warnval) {
+					if ($env{"$_"}{'value'} >= $cfg{"fd-$fetish"}{'environmentals'}{"$_"}{'warn'}) {
+						print "= W = WARNING!: Polled value for $_ of $pollval exceeds configured warning value for this environmental of $warnval! Raising WARNING ALERT\n" if ($debug == 1);
+					}
+				}
+				$pollval = "";
+				$warnval = "";
+				$critval = "";
 			}
 		}
 		if ($debug == 1) {
 			print "= I = Values populated : ";
 			foreach $key (keys(%env)) {
-				print "$key:$env{$key} ";
+				print "$key:$env{$key}{'value'} ";
 			}
 			print "\n";
 		}
