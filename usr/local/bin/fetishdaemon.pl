@@ -18,8 +18,7 @@ use strict;
 use warnings;
 use Data::Dumper; 
 use Socket;
-use XML::Simple;
-use Config::IniFiles;
+use XML::LibXML;
 use POE qw(
 	Wheel::SocketFactory
 	Wheel::ReadWrite
@@ -35,13 +34,28 @@ if (!$ARGV[0]) {
 }
 my $fetish = $ARGV[0];
 print "\n*** Starting Fetish Daemon for fetish $fetish ***\n\n";
-my $configfile = "/etc/kinethesia/talismandaemon.conf";
+my $configfile = "/etc/kinethesia/talismandaemon.xml";
 my %cfg;
 print "= I = Reading in config file: $configfile\n";
-tie %cfg, 'Config::IniFiles', ( -file => $configfile ) or die "Failed to create Config::IniFiles object: @Config::IniFiles::errors\n";
+my $parser = XML::LibXML->new();
+my $cfgref = $parser->parse_file($configfile);
+my $cfg = $cfgref -> getDocumentElement();
+
+#foreach my $env ($root->findnodes("fd-$fetish/environmental")) {
+#		my $name = $env->findnodes('./name');
+#		my $crit = $env->findnodes('./crit');
+#		my $warn = $env->findnodes('./warn');
+#		print "$name, crit : $crit, warn : $warn\n";
+#		print "$env\n\n";
+#}
+
+#foreach my $environ ($cfgref->findnodes('/cfg/fd-sht15/environmntal/')) {
+#    my($name) = $environ->findnodes('./name');
+#    print $name->to_literal, "\n" 
+#  }
 print "= I = Config file read\n";
 
-if (!$cfg{"fd-$fetish"}) {
+if (!$cfg->findnodes("fd-$fetish")) {
 	print "\n= C = No config found in $configfile for fetish: $fetish. Exiting.\n\n";
 	exit(1);
 }
@@ -56,53 +70,49 @@ my $serverkey = "/etc/kinethesia/certs/server.key";
 my $servercrt = "/etc/kinethesia/certs/server.crt";
 my $cacrt = "/etc/kinethesia/certs/ca.crt";
 
-if ($cfg{"fd-$fetish"}{'debug'}) {
-	$debug = $cfg{"fd-$fetish"}{'debug'};
+if ($cfg->findvalue("fd-$fetish/debug")) {
+	$debug = $cfg->findvalue("fd-$fetish/debug");
 	print "\n= I = Loading Debug Setting from config file: $debug\n" if ($debug == 1);
 }
-if ($cfg{"fd-$fetish"}{'daemonport'}) {
-	$daemonport = $cfg{"fd-$fetish"}{'daemonport'};
+if ($cfg->findvalue("fd-$fetish/daemonport")) {
+	$daemonport = $cfg->findvalue("fd-$fetish/daemonport");
 	print "= I = Loading daemon port from config file: $daemonport\n" if ($debug == 1);
 }
-if ($cfg{'GlobalFetishD'}{'bindaddress'}) {
-	$bindaddress = $cfg{'GlobalFetishD'}{'bindaddress'};
+if ($cfg->findvalue("GlobalFetishD/bindaddress")) {
+	$bindaddress = $cfg->findvalue("GlobalFetishD/bindaddress");
 	print "= I = Loading Global bind address from config file: $bindaddress\n" if ($debug == 1);
-} elsif ($cfg{"fd-$fetish"}{'bindaddress'}) {
-	$bindaddress = $cfg{"fd-$fetish"}{'bindaddress'};
-        print "= I = Loading bind address from config file: $bindaddress\n" if ($debug == 1);
-} 
-if ($cfg{'GlobalFetishD'}{'pollperiod'}) {
-	$pollperiod = $cfg{'GlobalFetishD'}{'pollperiod'};
+} elsif ($cfg->findvalue("fd-$fetish/bindaddress")) {
+	$bindaddress = $cfg->findvalue("fd-$fetish/bindaddress");
+	print "= I = Loading bind address from config file: $bindaddress\n" if ($debug == 1);
+}
+if ($cfg->findvalue("GlobalFetishD/pollperiod")) {
+        $pollperiod = $cfg->findvalue("GlobalFetishD/pollperiod");
 	print "= I = Loading Global poll period from config file: $pollperiod\n" if ($debug == 1);
-} elsif ($cfg{"fd-$fetish"}{'pollperiod'}) {
-	$pollperiod = $cfg{"fd-$fetish"}{'pollperiod'};
+} elsif ($cfg->findvalue("fd-$fetish/pollperiod")) {
+        $pollperiod = $cfg->findvalue("fd-$fetish/pollperiod");
 	print "= I = Loading poll period from config file: $pollperiod\n" if ($debug == 1);
 }
-if ($cfg{'GlobalFetishD'}{'serverkey'}) {
-        $serverkey = $cfg{'GlobalFetishD'}{'serverkey'};
-        print "= I = Loading Global Server Key from config file: $serverkey\n" if ($debug == 1);
-} elsif ($cfg{"fd-$fetish"}{'serverkey'}) {
-	$serverkey = $cfg{"fd-$fetish"}{'serverkey'};
+if ($cfg->findvalue("GlobalFetishD/serverkey")) {
+	$serverkey = $cfg->findvalue("GlobalFetishD/serverkey");
+	print "= I = Loading Global Server Key from config file: $serverkey\n" if ($debug == 1);
+} elsif ($cfg->findvalue("fd-$fetish/serverkey")) {
+	$serverkey = $cfg->findvalue("fd-$fetish/serverkey");
 	print "= I = Loading server key from config file: $serverkey\n" if ($debug == 1);
 }
-if ($cfg{'GlobalFetishD'}{'servercrt'}) {
-        $servercrt = $cfg{'GlobalFetishD'}{'servercrt'};
-        print "= I = Loading Global Server Certificate from config file: $servercrt\n" if ($debug == 1);
-} elsif ($cfg{"fd-$fetish"}{'servercrt'}) {
-	$servercrt = $cfg{"fd-$fetish"}{'servercrt'};
+if ($cfg->findvalue("GlobalFetishD/servercrt")) {
+	$servercrt = $cfg->findvalue("GlobalFetishD/servercrt");
+	print "= I = Loading Global Server Certificate from config file: $servercrt\n" if ($debug == 1);
+} elsif ($cfg->findvalue("fd-$fetish/servercrt")) {
+	$servercrt = $cfg->findvalue("fd-$fetish/servercrt");
 	print "= I = Loading server certificate from config file: $servercrt\n" if ($debug == 1);
 }
-if ($cfg{'GlobalFetishD'}{'cacrt'}) {
-        $cacrt = $cfg{'GlobalFetishD'}{'cacrt'};
-        print "= I = Loading Global CA Certificate from config file: $cacrt\n" if ($debug == 1); 
-} elsif ($cfg{"fd-$fetish"}{'cacrt'}) {
-	$cacrt = $cfg{"fd-$fetish"}{'cacrt'};
+if ($cfg->findvalue("GlobalFetishD/cacrt")) {
+	$cacrt = $cfg->findvalue("GlobalFetishD/cacrt");
+	print "= I = Loading Global CA Certificate from config file: $cacrt\n" if ($debug == 1); 
+} elsif ($cfg->findvalue("fd-$fetish/cacrt")) {
+	$cacrt = $cfg->findvalue("fd-$fetish/cacrt");
 	print "= I = Loading CA certificate from config file: $cacrt\n" if ($debug == 1);
 }
-
-# set uo the environmental queries and set any warnimg or critical levels that might be set for 
-# alerts. 
-setupenvironmentals();
 
 # Global hash for storing the env details returned by this FD.
 my %env;
@@ -317,48 +327,16 @@ sub pollreponse {
         return $xml;
 }
 	
-sub setupenvironmentals {
-	
-	my @environmentals;
-	my @values;
-	my @temp;
-	my $envtemp;
-	my $warnval = "";
-	my $critval = "";
-
-	@environmentals = split(',', $cfg{"fd-$fetish"}{'environmentals'});
-	undef($cfg{"fd-$fetish"}{'environmentals'});
-	foreach (@environmentals) {
-		if ($_ =~ m/:/) {
-			@temp = split(':', $_);
-			if (@temp == 2) {
-				$envtemp = $temp[0];
-				$warnval = $temp[1];
-				print "= I = Populating Environmental $envtemp with Warning Level $warnval\n" if ($debug == 1);
-				$cfg{"fd-$fetish"}{'environmentals'}{$envtemp}{'warn'} = $warnval;
-				$cfg{"fd-$fetish"}{'environmentals'}{$envtemp}{'crit'} = "";
-			} elsif (@temp == 3) {
-				$envtemp = $temp[0];
-				$warnval = $temp[1];
-				$critval = $temp[2];
-				print "= I = Populating Environmental $temp[0] with Warning Level $temp[1] and critical level $temp[2]\n" if ($debug == 1);
-				$cfg{"fd-$fetish"}{'environmentals'}{"$envtemp"}{'warn'} = $temp[1];
-				$cfg{"fd-$fetish"}{'environmentals'}{"$envtemp"}{'crit'} = $temp[2];
-			}
-		} else {
-			print "= I = No alert levels configured for this environmental $_\n" if ($debug == 1);
-			$cfg{"fd-$fetish"}{'environmentals'}{$_}{'warn'} = "";
-			$cfg{"fd-$fetish"}{'environmentals'}{$_}{'crit'} = "";
-		}
-	}
-}
-
 sub pollfetish {
 
 	my @values;
 	my @temp;
 	my $key;
+	my $envtemp;
 	my %keyval;
+	my $node_cnt = 0;
+	my @nodes;
+	my $node;
 	my $fetishresponse;
 	my @environmentals;
 	my $pollval;
@@ -371,36 +349,54 @@ sub pollfetish {
 		print "= W = No values from the Fetish! Fetish is either broken or not responding\n" if ($debug == 1);
 		undef %env;
 	} else {
-		@environmentals = keys($cfg{"fd-$fetish"}{'environmentals'});
-		@values = split(',', $fetishresponse);
-		if (@environmentals < @values) {
+		@values = split(',', $fetishresponse);	
+		# store the responses in a temp hash.
+                foreach (@values) {
+                        @temp = split(':', $_);
+                        $keyval{"$temp[0]"} = $temp[1];
+                }
+		#first lets make sure we have as many environmentals defiend as were returned.
+		my $node_cnt = $cfg->findvalue("count(fd-$fetish/environmental)");
+		if ($node_cnt < @values) {
 			print "= W = Fetish returned more environmental values than are defined in your cfg file, have you forgotten to define an environmental? (You could just be filtering in which case ignore this message)\n" if ($debug == 1);
 		} 
-		foreach (@values) {
-			@temp = split(':', $_);
-			$keyval{"$temp[0]"} = $temp[1];
-		}
-		foreach (@environmentals) {
-			if (!$keyval{"$_"}) {
-				print "= W = Fetsh did not provide environmental $_ that is defined in the cfg file, Are you sure this fetish can give you this value?\n" if ($debug == 1);
-			} else { 
-				$env{"$_"}{'value'} = $keyval{"$_"};
-				$pollval = $keyval{"$_"};
-				$warnval = $cfg{"fd-$fetish"}{'environmentals'}{"$_"}{'warn'};
-				$critval = $cfg{"fd-$fetish"}{'environmentals'}{"$_"}{'crit'};
-				if ($critval) { 
-					if ($env{"$_"}{'value'} >= $cfg{"fd-$fetish"}{'environmentals'}{"$_"}{'crit'}) {
-						print "= C = CRITICAL!: Polled value for $_ of $pollval exceeds configured critical value for this environmental of $critval! Raising CRITICAL ALERT\n" if ($debug == 1);
-					}
-				} elsif ($warnval) {
-					if ($env{"$_"}{'value'} >= $cfg{"fd-$fetish"}{'environmentals'}{"$_"}{'warn'}) {
-						print "= W = WARNING!: Polled value for $_ of $pollval exceeds configured warning value for this environmental of $warnval! Raising WARNING ALERT\n" if ($debug == 1);
-					}
+		# now lts make sure we actually got all the values we expected from the config.
+		foreach ($cfg->findnodes("fd-$fetish/environmental")) {
+    			foreach ($_->findnodes('./name')) {
+				$envtemp = $_->textContent();
+				#create an array of expected respones to hand up the the talismandaemon.
+				push(@environmentals, $envtemp);	
+				if (!$keyval{$envtemp}) {
+					print "= W = Fetish did not provide environmental $envtemp that is defined in the cfg file, Are you sure this fetish can give you this value?\n" if ($debug == 1);
 				}
-				$pollval = "";
-				$warnval = "";
-				$critval = "";
+  			}
+		}
+		# Now lets go through our list of expected responses and make sure we don't have to raise any alerts based on the responses.
+		foreach $key (@environmentals) {
+			if (!$keyval{"$key"}) {
+				next;
+			} else {
+				$pollval = $keyval{"$key"};
+				# assign the epected returned values to the response hash.
+				$env{"$key"}{'value'} = $keyval{"$key"};
 			}
+			@nodes = $cfg->findnodes("fd-$fetish/environmental/name[text( )='$key']/..");
+			foreach (@nodes) {
+				$warnval = $_->findvalue("./warn");
+				$critval = $_->findvalue("./crit");
+			}
+			if ($critval) {
+				if ($env{"$key"}{'value'} >= $critval) {
+					print "= C = CRITICAL!: Polled value for $key of $pollval exceeds configured critical value for this environmental of $critval! Raising CRITICAL ALERT\n" if ($debug == 1);
+				}
+			} elsif ($warnval) {
+				if ($env{"$key"}{'value'} >= $warnval) {
+					print "= W = WARNING!: Polled value for $key of $pollval exceeds configured warning value for this environmental of $warnval! Raising WARNING ALERT\n" if ($debug == 1);
+				}
+			}
+			$pollval = "";
+			$warnval = "";
+			$critval = "";
 		}
 		if ($debug == 1) {
 			print "= I = Values populated : ";
