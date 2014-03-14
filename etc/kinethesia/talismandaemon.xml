@@ -20,12 +20,6 @@
 			<crit></crit>
 			<qual>8</qual>
 		</environmental>
-<!--                <environmental>
-                        <name>wow</name>
-                        <warn>10</warn>
-                        <crit></crit>
-                        <qual></qual>
-                </environmental> -->
 		<environmental>
 			<name>humidity</name>
 			<warn>10</warn>
@@ -37,7 +31,7 @@
                         <warn></warn>
                         <crit></crit>
                         <qual></qual>
-                </environmental>
+                </environmental>  
 		<debug>1</debug>
 		<pollperiod>30</pollperiod>
                 <daemonport>2001</daemonport>

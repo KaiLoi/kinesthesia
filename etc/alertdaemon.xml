@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<cfg>
+	<AlertDaemon>
+		<bindaddress>127.0.0.1</bindaddress>
+		<port>1998</port>
+		<shadowaddr>127.0.0.1</shadowaddr>
+		<shadowport>1975</shadowport>
+		<serverkey>/etc/kinethesia/certs/server.key</serverkey>
+                <servercrt>/etc/kinethesia/certs/server.crt</servercrt>
+                <cacrt>/etc/kinethesia/certs/ca.crt</cacrt>
+		<clientkey>/etc/kinethesia/certs/client1.key</clientkey>
+		<clientcrt>/etc/kinethesia/certs/client1.crt</clientcrt>
+	</AlertDaemon>
+</cfg>
