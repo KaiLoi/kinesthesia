@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/pperl
 
 ######################################################################
 ######################################################################
@@ -13,6 +13,8 @@
 ##			the FD to the TD.
 ## v1.2:	Made the Daemon generic so it can interface with many
 ## 			types of fetish to cut down on codebase.
+## v1.3:	Almost complete re-write to use Lib::XML and much 
+## 			cleaner code and commnting.
 
 use strict;
 use warnings;
@@ -26,6 +28,7 @@ use POE qw(
 	Filter::SSL
 	Filter::Stackable
 	Filter::Stream
+	Component::Client::TCP
 );
 
 if (!$ARGV[0]) {
@@ -42,8 +45,12 @@ my $BINDADDRESS = "127.0.0.1";
 my $POLLPERIOD = 30;
 my $SERVERKEY = "/etc/kinethesia/certs/server.key";
 my $SERVERCRT = "/etc/kinethesia/certs/server.crt";
+my $CLIENTCRT = "/etc/kinethesia/certs/client1.crt";
+my $CLIENTKEY = "/etc/kinethesia/certs/client1.key";
 my $CACRT = "/etc/kinethesia/certs/ca.crt";
 my $CONFIGFILE = "/etc/kinethesia/talismandaemon.xml";
+my $ALERTDAEMONADDR = "127.0.0.1";
+my $ALERTDAEMONPORT = "1975";
 # Create an XML parser engine for the program.
 my $parser = XML::LibXML->new();
 # Global hash for storing the env details returned by this FD.
@@ -55,6 +62,7 @@ print "= I = Reading in config file: $CONFIGFILE\n";
 my $cfg = loadAndParseConfig();
 print "\n= I = Config file read\n";
 
+# Check if the conig file has a section for the fetish called. 
 if (!$cfg->findnodes("fd-$FETISH")) {
 	print "\n= C = No config found in $CONFIGFILE for fetish: $FETISH. Exiting.\n\n";
 	exit(0);
@@ -80,9 +88,8 @@ POE::Session->create(
  	}
 );
 
-
 # POE session to gather data from the fetish and populate the global variables with their current values for serving
-# to other clients/services.
+# to other clients/services at the configured pollperiod. Essentially a spinning timer. 
 POE::Session->create(
 	inline_states => {
 		_start => sub {
@@ -91,7 +98,7 @@ POE::Session->create(
 			$_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
 			print "= I = Fetish Polling session started\n" if ($DEBUG == 1);
 		},
-
+		# Every "tick" period, poll the fetish and do all the relevent tasks around that, then go back to sleep for the next pollperiod. 
 		tick => sub {
 			print "\n= I = Polling fetish for environmental values and populating variables\n" if ($DEBUG == 1);
 			pollfetish();
@@ -101,7 +108,7 @@ POE::Session->create(
 	}
 );
 
-
+### Sub to kick off a listening port on the configured listening address. Leave it running and ready for connections from clients. 
 sub parent_start {
 	my $heap = $_[HEAP];
 
@@ -116,7 +123,7 @@ sub parent_start {
 	print "= I = Socket initialised on $BINDADDRESS:$DAEMONPORT Waiting for connections\n" if ($DEBUG == 1);
 }
 
-# clean up if we shut down the server
+### Sub to clean up if we shut down the server
 sub parent_stop {
 	my $heap = $_[HEAP];
 	delete $heap->{listener};
@@ -125,13 +132,13 @@ sub parent_stop {
 }
 
 
-# open the socket for the remote session.
+### Sub to open the socket for the remote session.
 sub socket_birth {
 	my ($socket, $address, $port) = @_[ARG0, ARG1, ARG2];
 
 	$address = inet_ntoa($address);
 	print "\n= S = Socket birth client connecting\n" if ($DEBUG == 1);
-
+	# Create a POE session to deal with input/output on this socket. 
 	POE::Session->create(
 		inline_states => {
 			_start => \&socket_success,
@@ -144,7 +151,7 @@ sub socket_birth {
 	);
 }
 
-# close the socket session when the user exits.
+### Sub to close the socket session when the user exits.
 sub socket_death {
 	my $heap = $_[HEAP];
 	if ($heap->{socket_wheel}) {
@@ -153,7 +160,7 @@ sub socket_death {
 	}
 }
 
-#  yay! we sucessfully opened a socket. Set up the session.
+### Sub to take a sucessfully set up socket and configure it for SSL and read/write.
 sub socket_success {
 	my ($heap, $kernel, $connected_socket, $address, $port) = @_[HEAP, KERNEL, ARG0, ARG1, ARG2];
 	
@@ -180,6 +187,7 @@ sub socket_success {
 	print "= SSL = SSL Socket Created\n" if ($DEBUG == 1);
 }
 
+### Sub to process input to the listening fetish daemon from the talisman daemon or other client. 
 sub socket_input {
 	my ($heap, $kernel, $buf) = @_[HEAP, KERNEL, ARG0];
 	my $response = "";
@@ -190,6 +198,7 @@ sub socket_input {
 	my $ref;
 	my $xml;
 
+	# Take the XML received and create an new XML object from it. 
 	$xml = XML::LibXML->load_xml(string => $buf);
 	$command = $xml->findvalue("/query/command");
 	$immediate = $xml->findvalue("/query/immediate");
@@ -203,15 +212,18 @@ sub socket_input {
 			print "\n= I = Clint has requested realtime fetish values, refreshing.\n" if ($DEBUG == 1);
 			pollfetish();
 		}
-		# The option is available here ti query the Fetish Daemon for only specific values.
+		# The option is available here to query the Fetish Daemon for only specific values.
 		# the decision at this time is to only ask for everything it has and filter to the 
-		# shadow at the telisman daemon level. But this can be changed at a later time for 
+		# shadow at the talisman daemon level. But this can be changed at a later time for 
 		# additional filtering and traffic efficiency on low bandwidth links.
 		if ($command eq "all") {
+			# Send the client all environmntals, values and quality levels currently stored in the global hash.
 			$response = allresponse();
 		} elsif ($command eq "poll") {
+			# if the client sends a "poll" type query, respond. Acts as a kepalive, if needed, from the client. 
 			$response = pollreponse();
 		} else {
+			# We don't know what thety asked for, inform them with an error type message.
 			$response = errresponse("Unknown query command sent to fetish daemon $FETISH");
 		}
 		if ($DEBUG == 1) {
@@ -219,8 +231,10 @@ sub socket_input {
 			print $response->toString(1);
 			print "\n";
 		}
+		# Send the client the actual XML.
 		$heap->{socket_wheel}->put($response);
 	} else {
+		# The Client Certificate failed authentication. Be nice and tell them so then kick them off the server. 
 		print "= SSL = Client Certificate Invalid! Rejecting command and disconnecting!\n" if ($DEBUG == 1);
 		$response = errresponse("INVALID CERT! Connection rejected!");
 		print "= I = Sending Client Result:\n$response\n" if ($DEBUG == 1);
@@ -229,10 +243,13 @@ sub socket_input {
 	}
 }
 
+# Start the POE Kernel and run all configured services. 
 $poe_kernel->run();
 
 #### NON POE subs below this line
 
+### Sub to load the config file into the global cfg variable for all other parts of the program to query. Looks for specific 
+### values that override defaults and populated them in order of preference: Default->Global->Specific.
 sub loadAndParseConfig {
 
         my $cfgref = $parser->parse_file($CONFIGFILE);
@@ -285,6 +302,7 @@ sub loadAndParseConfig {
 	return $xml;
 }
 
+### Sub to craft an errror response to a client for an unexpected result of some kind. 
 sub errresponse {
 
 	my $msg = shift;
@@ -293,6 +311,7 @@ sub errresponse {
 	my $msgtag;
 	my $typetag;
 
+	# Create a new XML tree and format it as an error response with the msg provided to the sub.
 	$root = $xml->createElement("$FETISH");
         $xml->addChild($root);
 	$typetag = $xml->createElement('msgtype');
@@ -304,6 +323,7 @@ sub errresponse {
 	return $xml;
 }
 
+### Sub to form a response to an environmental query from a client.
 sub allresponse {
 
 	my $root;
@@ -317,6 +337,7 @@ sub allresponse {
 	my $qualtag;
 	my $xml = XML::LibXML::Document->new('1.0', 'utf-8');
 
+	# Create a new XML tree and fill it with the data from the ENV hash, then return it. 
 	$root = $xml->createElement("$FETISH");
 	$xml->addChild($root);
 	$typetag = $xml->createElement('msgtype');
@@ -340,6 +361,7 @@ sub allresponse {
         return $xml;
 }
 
+### Sub to form a response to a poll request from the Talisman Daemon.
 sub pollreponse {
 
 	my $response;
@@ -366,26 +388,14 @@ sub pollreponse {
 	$msgtag->addChild($xml->createTextNode(""));
         return $xml;
 }
-	
+
+### Sub to poll the physical hardware, check the results, populate the global hash for this pollperiod and raise any alerts. 
 sub pollfetish {
 
-#	my @values;
-#	my @temp;
-#	my $key;
 	my $envtemp;
-#	my %keyval;
-#	my $node_cnt = 0;
-#	my @nodes;
-#	my $node;
 	my $fetishresponse;
 	my @environmentals;
-#	my $pollval;
-#	my $critval;
-#	my $warnval;
-#	my $qualval;
-
 	my %fetishvalues;
-
 
 	#create an array containing the expected environmntal rsponses from the config file. 
 	foreach ($cfg->findnodes("fd-$FETISH/environmental")) {
@@ -411,76 +421,13 @@ sub pollfetish {
 	
 	# Populate the global environmentals hash for querying for this run of the poll.
 	populateResults(\@environmentals, \%fetishvalues);
-
+	
+	# take the values returned and check them against any configured alert thresholds, then raise relevent alerts.
 	raiseAlerts(\@environmentals);
-
-#	} else {
-#		@values = split(',', $fetishresponse);	
-#		# store the responses in a temp hash.
-#                foreach (@values) {
-#                        @temp = split(':', $_);
-#                        $keyval{"$temp[0]"} = $temp[1];
-#                }
-#		#first lets make sure we have as many environmentals defined as were returned.
-#		my $node_cnt = $cfg->findvalue("count(fd-$FETISH/environmental)");
-#		if ($node_cnt < @values) {
-#			print "= W = Fetish returned more environmental values than are defined in your cfg file, have you forgotten to define an environmental? (You could just be filtering in which case ignore this message)\n" if ($DEBUG == 1);
-#		} 
-#		# now lts make sure we actually got all the values we expected from the config.
-#		foreach ($cfg->findnodes("fd-$FETISH/environmental")) {
-#    			foreach ($_->findnodes('./name')) {
-#				$envtemp = $_->textContent();
-#				#create an array of expected respones to hand up the the talismandaemon.
-#				push(@environmentals, $envtemp);	
-#				if (!$keyval{$envtemp}) {
-#					print "= W = Fetish did not provide environmental $envtemp that is defined in the cfg file, Are you sure this fetish can give you this value?\n" if ($DEBUG == 1);
-#				}
-#  			}
-#		}
-#		# Now lets go through our list of expected responses and make sure we don't have to raise any alerts based on the responses.
-#		foreach $key (@environmentals) {
-#			# if there is no response from the fetish for this env type, skip on to the next. 
-#			if (!$keyval{"$key"}) {
-#				next;
-#			}
-#			# find the cfg node that matches this env value.
-#                        @nodes = $cfg->findnodes("fd-$FETISH/environmental/name[text( )='$key']/..");
-#			# populate the various comparison values into variables. 
-#                        foreach (@nodes) {
-#                                $warnval = $_->findvalue("./warn");
-#                                $critval = $_->findvalue("./crit");
-#                                $qualval = $_->findvalue("./qual");
-#                        }
-#			$pollval = $keyval{"$key"};
-#			# assign the expected returned values to the response hash.
-#			$ENV{"$key"}{'value'} = $keyval{"$key"};
-#			$ENV{"$key"}{'qual'} = $qualval;
-#			# do some comparisons for alerts and warnings. 
-#			if ($critval) {
-#				if ($ENV{"$key"}{'value'} >= $critval) {
-#					print "= C = CRITICAL!: Polled value for $key of $pollval exceeds configured critical value for this environmental of $critval! Raising CRITICAL ALERT\n" if ($DEBUG == 1);
-#				}
-##			} elsif ($warnval) {
-#				if ($ENV{"$key"}{'value'} >= $warnval) {
-#					print "= W = WARNING!: Polled value for $key of $pollval exceeds configured warning value for this environmental of $warnval! Raising WARNING ALERT\n" if ($DEBUG == 1);
-#				}
-#			}
-#			# reset the variables for the next environmental in case they are undefiend and as such carry over.
-#			$pollval = "";
-#			$warnval = "";
-#			$critval = "";
-#			$qualval = "";
-#		}
-#		if ($DEBUG == 1) {
-#			print "= I = Values populated : ";
-#			foreach $key (keys(%ENV)) {
-#				print "$key:$ENV{$key}{'value'}, ";
-#			}
-#			print "\n";
-#		}
-#	}
+	return(1);
 }
 
+### Sub to take expected responses, look at the configured responses and raise any alerts that are configured against this environmental variable.
 sub raiseAlerts {
 	my @expected = @{$_[0]};
 	my $environmental;
@@ -490,13 +437,15 @@ sub raiseAlerts {
 	my $critval;
 
 	print "= I = Examining returned values from fetish and raising any configured alerts\n\n" if ($DEBUG == 1);
+	# run through each expected value and compare result against configured alerts (if they exist)
 	foreach $environmental (@expected) { 
 		if (!$ENV{$environmental}{'value'}) {
-			# We have an expected value that was not returned. We already warned he user about this in debug. Might info on this one day. 
+			# We have an expected value that was not returned. We already warned he user about this in debug. Might raise an INFO alert on this one day. 
 			next;
 		}
+		# set the returned value and conigured alert values into some vars for ease of use (if configured).
 		$pollval = $ENV{$environmental}{'value'};
-		# find the cfg node that matches this env value. 
+		# find the cfg node that matches this environmental value
 		@nodes = $cfg->findnodes("fd-$FETISH/environmental/name[text( )='$environmental']/..");
 		# populate the various comparison values into variables. 
 		foreach (@nodes) {
@@ -506,13 +455,16 @@ sub raiseAlerts {
 		# do some comparisons for alerts and warnings. 
 		if ($critval) {
 			if ($pollval >= $critval) {
+				sendAlert($environmental, "CRITICAL", "CRITICAL ALERT: Polled value for $environmental of $pollval from $FETISH exceeds configured critical value of $critval!");
 				print "    = C = CRITICAL!: Polled value for $environmental of $pollval exceeds configured critical value for this environmental of $critval! Raising CRITICAL ALERT\n" if ($DEBUG == 1);
 			}
 		} elsif ($warnval) {
 			if ($pollval >= $warnval) {
+				sendAlert($environmental, "WARNING", "WARNING: Polled value for $environmental of $pollval from $FETISH exceeds configured warning value of $warnval!");
 				print "    = W = WARNING!: Polled value for $environmental of $pollval exceeds configured warning value for this environmental of $warnval! Raising WARNING ALERT\n" if ($DEBUG == 1);
 			}
 		}
+		# reset the variables to undefined for next run or stuff carries over.
 		$pollval = "";
 		$warnval = "";
 		$critval = "";
@@ -520,6 +472,7 @@ sub raiseAlerts {
 	print "\n= I = Alerts and Warnings complete.\n\n"  if ($DEBUG == 1);
 }
 
+### Sub to Parse the response from the fetish itself and return a convenient hash of the values to use.
 sub parseResponse {
 
 	my $fetishresponse = shift;
@@ -536,6 +489,7 @@ sub parseResponse {
 	return(%hash);
 }
 
+### Sub to compare the reuturned values of the fetish against the configured expected values. At this point mostly a debug sub.
 sub compareResults  {
 	my @expected = @{$_[0]};
 	my %returned = %{$_[1]};
@@ -548,7 +502,7 @@ sub compareResults  {
 		$returnedcount++;
 	}
 
-	# First lets check if we got more values from the fetish than we were expecting from the config by counting the environmental nodes in the config nd conparing to the count of returned. 
+	# First lets check if we got more values from the fetish than we were expecting from the config by counting the environmental nodes in the config and comparing to the count of returned. 
 	$node_count = $cfg->findvalue("count(fd-$FETISH/environmental)");
 	if ($node_count < $returnedcount) {
 		# we have more responses than are configured. Lets tell the user about them if they care. 
@@ -560,15 +514,17 @@ sub compareResults  {
 	}
 	# Now lets check if we didn't get a response from the fetish that we were expecting. 
 	if ($node_count > $returnedcount) {
-		# we have less responses than are configured. ets tell the user about it if they care. 
+		# we have less responses than are configured. Lets tell the user about it if they care. 
 		foreach (@expected) {
 			if (!$returned{$_}) {
 				print "= W = Fetish did not provide environmental $_ that is defined in the cfg file, Are you sure this fetish can give you this value?\n" if ($DEBUG == 1);
 			}
 		}
 	}
+	return(1);
 }
 
+### Sub to take our temp hash of responses and populte it into the global hash for the next pollperiod to be returned to any querying clients. 
 sub populateResults {
 	my @expected = @{$_[0]};
 	my %returned = %{$_[1]};
@@ -600,5 +556,57 @@ sub populateResults {
 	print "\n= I = Environmntal Hash Populated\n\n" if ($DEBUG == 1);
 	return(1);
 }
+
+sub sendAlert {
+	my $environmental = shift;
+	my $level = shift;
+	my $msg = shift;
+	my $xml;
+
+	POE::Component::Client::TCP->new(
+		RemoteAddress => $ALERTDAEMONADDR,
+    		RemotePort    => $ALERTDAEMONPORT,
+    		Filter        => [ "POE::Filter::SSL", crt => $CLIENTCRT, key => $CLIENTKEY, client => 1 ],
+    		Connected     => sub {
+			$xml = formAlert($environmental, $level, $msg);
+			$_[HEAP]{server}->put($xml);
+		},
+		ServerInput   => sub {
+			delete $_[HEAP]->{server};
+		},
+	);
+}
+
+sub formAlert {
+	my $environmental = shift;
+	my $level = shift;
+	my $msg = shift;
+        my $root;
+	my $envtag;
+	my $alerttag;
+        my $typetag;
+        my $leveltag;
+        my $msgtag;
+
+        my $xml = XML::LibXML::Document->new('1.0', 'utf-8');;
+        $root = $xml->createElement("$FETISH");
+        $xml->addChild($root);
+        $typetag = $xml->createElement('msgtype');
+        $typetag->addChild($xml->createTextNode("ALERT"));
+        $root->addChild($typetag);
+	$alerttag = $xml->createElement('alert');
+	$root->addChild($alerttag);
+	$envtag = $xml->createElement('environmental');
+	$alerttag->addChild($envtag);
+	$envtag->addChild($xml->createTextNode("$environmental"));
+        $leveltag = $xml->createElement('level');
+        $alerttag->addChild($leveltag);
+	$leveltag->addChild($xml->createTextNode("$level"));
+        $msgtag = $xml->createElement('msg');
+        $alerttag->addChild($msgtag);
+        $msgtag->addChild($xml->createTextNode("$msg"));
+        return $xml;
+}
+
 
 ### END OF LINE ###
