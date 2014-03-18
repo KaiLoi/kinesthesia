@@ -39,8 +39,22 @@ my $CONFIGFILE = "/etc/kinethesia/alertdaemon.xml";
 my $parser = XML::LibXML->new();
 
 my %CRITQUEUE;
+setupQueue(\%CRITQUEUE, "CRITICAL");
 my %WARNQUEUE;
+setupQueue(\%WARNQUEUE, "WARNIMG");
 my %INFOQUEUE;
+setupQueue(\%INFOQUEUE, "INFO");
+# Set a period of time (in seconds) for running through the queue and cleaning out any stale alarms as defined by $STALEALARM. Default is 30 seconds. 
+my $QUEUECLEANPERIOD = 30;
+# Set a period of time (in seconds) past which we consider an alarm in the queue stale and delete it.
+# default is 1 hrs or 3600  seconds. This allows new alarms to come in even if existing is acked and surpressed. 
+my $STALEALARM = 3600;
+# Set a period of time (in seconds) to process the alarm queues and publish alerts to a subscribed Shadow and attempt to get acknowlaged.
+# Defaults to every 1 second. Once an alarm is Acknowlaged it falls back to notifying the shadow ever $ACKTIMER seconds in case user missed alarm.
+my $PROCESSQUEUE = 1;
+# Set a period of time (in seconds) beyond which we remind the Shadow of an Acknowlaged but unsurpresed alarm. Just in case they missed it.
+# defaults to 1 min or 60 seconds. 
+my $ACKTIMER = 300;
 
 print "\n*** Starting Kinethesia Alert Daemon  ***\n\n";
 print "= I = Reading in config file: $CONFIGFILE\n";
@@ -66,6 +80,52 @@ POE::Session->create(
                 socket_death => \&socket_death,
         }
 );
+
+# Create POE session to keep the Alert queues clean and relevent. 
+# Basically this sub program fires every 5 min and cleans out any Alerts
+# that haven't reported in 24 hrs.  If we haven't heard from it in 24 hrs 
+# we probably don't care, acknowlaged or not. But we will be able to specify 
+# only ackknowlaged in the sub. Stops the memory from filling with
+# old stale Alerts that are no longer reporting. 
+POE::Session->create(
+        inline_states => {
+                _start => sub {
+                        $_[HEAP]->{next_alarm_time} = int(time()) + $QUEUECLEANPERIOD;
+                        $_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
+                },
+
+                tick => sub {
+			print "\n= I = Cleaning up Alert Queues.\n" if ($DEBUG >= 1);
+			cleanAlertQueue(\%CRITQUEUE);
+			cleanAlertQueue(\%WARNQUEUE);
+			cleanAlertQueue(\%INFOQUEUE);
+			print "= I = Finished cleaning up Alert Queues sleeping for $QUEUECLEANPERIOD seconds.\n\n" if ($DEBUG >= 1);
+                        $_[HEAP]->{next_alarm_time} = $_[HEAP]->{next_alarm_time} + $QUEUECLEANPERIOD;
+                        $_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
+                },
+        },
+);
+
+# Create a POE Session to run through the alarm queues and publish alarms to a subscribed shadow. 
+POE::Session->create(
+        inline_states => {
+                _start => sub {
+                        $_[HEAP]->{next_alarm_time} = int(time()) + $PROCESSQUEUE;
+                        $_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
+                },
+
+                tick => sub {
+                        print "\n= I = Running Alert Queues.\n" if ($DEBUG >= 11);
+                        runAlertQueue(\%CRITQUEUE);
+                        runAlertQueue(\%WARNQUEUE);
+                        runAlertQueue(\%INFOQUEUE);
+                        print "= I = Finished running Alert Queues sleeping for $PROCESSQUEUE seconds.\n\n" if ($DEBUG >= 11);
+                        $_[HEAP]->{next_alarm_time} = $_[HEAP]->{next_alarm_time} + $PROCESSQUEUE;
+                        $_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
+                },
+        },
+);
+
 
 ### Sub to kick off a listening port on the configured listening address. Leave it running and ready for connections from clients. 
 sub parent_start {
@@ -152,6 +212,9 @@ sub socket_input {
         my $xml;
 	my $msg;
 	my $indexhash;
+	my $root;
+	my $sender;
+	my $msgtype;
 
 	# First lets verify that the command is from a legitimate client. 
 	print "= SSL = Authing Client Command\n" if ($DEBUG >= 1);
@@ -173,12 +236,22 @@ sub socket_input {
                 print $response->toString(1) if ($DEBUG >= 2);
                 print "\n\n" if ($DEBUG >= 2);
 		$heap->{socket_wheel}->put($response);
-		# process the alert.
-		processAlert($xml);	
-		print "CRITQUEUE: \n";
-		print Dumper(%CRITQUEUE);
-		print "\n\nWARNQUEUE: \n";
-		print Dumper(%WARNQUEUE);
+		# Now we've acknowlages the message, lets see if it's an ALERT or a CMD.
+		$root = $xml->documentElement();
+        	$sender = $root->nodeName();
+		$msgtype = $xml->findvalue("$sender/msgtype");
+		if ($msgtype eq "ALERT") {
+			print "= I = msgtype is an Alert Processing...\n" if ($DEBUG >= 1);
+			processAlert($xml);	
+		} elsif ($msgtype eq "CMD") {
+			print "= I = msgtype is a CMD Processing...\n" if ($DEBUG >= 1);
+		} else {
+			print "= I = msgtype is unknown. Skipping\n" if ($DEBUG >= 1);
+		}
+#		print "CRITQUEUE: \n";
+#		print Dumper(%CRITQUEUE);
+#		print "\n\nWARNQUEUE: \n";
+#		print Dumper(%WARNQUEUE);
 	} else {
 		# The Client Certificate failed authentication. Drop the packet on the floor and move on. 
 		print "= SSL = Client Certificate Invalid! Rejecting command and disconnecting!\n" if ($DEBUG >= 1);
@@ -275,8 +348,22 @@ sub processAlert {
 		$level = $_->findvalue("./level");
 		$msg = $_->findvalue("./msg");
 		$env = $_->findvalue("./environmental");
-		# Add the alert to it's alert queue.
-		addAlert($level, $alerter, $env, $msg);
+		# Add the alert to it's alert queue. Split up in case we want to handle them differently later.
+		# also , this way Critical alerts always flow throguh first. 
+		if ($level eq "CRITICAL") {
+			print "    = I = Putting Alert in the Critical queue.\n" if ($DEBUG >= 1);
+			addAlert(\%CRITQUEUE, $level, $alerter, $env, $msg);
+		} elsif ($level eq "WARNING") {
+			print "    = I = Putting Alert in the Warning queue.\n" if ($DEBUG >= 1);
+			addAlert(\%WARNQUEUE, $level, $alerter, $env, $msg);
+		} elsif ($level eq "INFO") {
+			print "    = I = Putting Alert in the Info queue.\n" if ($DEBUG >= 1);
+			addAlert(\%INFOQUEUE, $level, $alerter, $env, $msg);
+		} else {
+			# some weird value received we can't put this alert in a queue
+			print "    = I = Unable to correctly catagorise Alert with level $level.\n" if ($DEBUG >= 1);
+			return(0);
+		}
 	}
 	$alerter = "";
 	$level = "";
@@ -287,51 +374,78 @@ sub processAlert {
 }
 
 sub addAlert {
+	my $queue = shift;
 	my $level = shift;
 	my $alerter = shift;
 	my $env = shift;
 	my $msg = shift;
 	my $time = time;
 
-	# Lets put the alerts in their correct queue. Split up in case we want to handle them differently later.
-	# also , this way Critical alerts always flow throguh first. 
-	if ($level eq "CRITICAL") {
-		# put in critical queue
-		print "    = I = Putting Alert in the Critical queue.\n" if ($DEBUG >= 1);
-		if ($CRITQUEUE{$alerter}{$env}) {
-			print "    = I = We already have an alert for this, updating with time $time.\n" if ($DEBUG >= 1);
-			$CRITQUEUE{$alerter}{$env}{'lastseen'} = $time;
-		} else {
-			print "    = I = This is a new Alert, adding to queue.\n" if ($DEBUG >= 1);
-			$CRITQUEUE{$alerter}{$env}{'msg'} = $msg;
-			$CRITQUEUE{$alerter}{$env}{'lastseen'} = $time;
-		}
-	} elsif ($level eq "WARNING") {
-		# put in warning queue
-		print "    = I = Putting Alert in the Warning queue.\n" if ($DEBUG >= 1);
-		if ($WARNQUEUE{$alerter}{$env}) {
-                        print "    = I = We already have an alert for this, updating with time $time.\n" if ($DEBUG >= 1);
-			$WARNQUEUE{$alerter}{$env}{'lastseen'} = $time;
-                } else {
-                        print "    = I = This is a new Alert, adding to queue.\n" if ($DEBUG >= 1);
-                        $WARNQUEUE{$alerter}{$env}{'msg'} = $msg;
-			$WARNQUEUE{$alerter}{$env}{'lastseen'} = $time;
-                }
-	} elsif ($level eq "INFO") {
-		# put in info queue
-		print "    = I = Putting Alert in the Info queue.\n" if ($DEBUG >= 1);
-		if ($INFOQUEUE{$alerter}{$env}) {
-                        print "    = I = We already have an alert for this, updating with time $time.\n" if ($DEBUG >= 1);
-                        $INFOQUEUE{$alerter}{$env}{'lastseen'} = $time;
-                } else {
-                        print "    = I = This is a new Alert, adding to queue.\n" if ($DEBUG >= 1);
-                        $INFOQUEUE{$alerter}{$env}{'msg'} = $msg;
-                        $INFOQUEUE{$alerter}{$env}{'lastseen'} = $time;
-                }
+	# Lets put the alerts in their correct queue. 
+	if ($queue->{'alerts'}->{$alerter}->{$env}) {
+		print "    = I = We already have an alert for this, updating with time $time.\n" if ($DEBUG >= 1);
+		$queue->{'alerts'}->{$alerter}->{$env}->{'lastseen'} = $time;
 	} else {
-		# some weird value received we can't put this alert in a queue
-		print "    = I = Unable to correctly catagorise Alert with level $level.\n" if ($DEBUG >= 1);
-		return(0);
+		print "    = I = This is a new Alert, adding to queue.\n" if ($DEBUG >= 1);
+		# Insert the message, a timestamp and create fields to supress the message and acknowlage it.
+		$queue->{'alerts'}->{$alerter}->{$env}->{'msg'} = $msg;
+		$queue->{'alerts'}->{$alerter}->{$env}->{'lastseen'} = $time;
+		$queue->{'alerts'}->{$alerter}->{$env}->{'supressed'} = 0;
+		$queue->{'alerts'}->{$alerter}->{$env}->{'acked'} = 0;
 	}
 }
 
+sub cleanAlertQueue {
+	my $queue = $_[0];
+	my $queuename = $queue->{'name'};
+	my $alerterkey;
+	my $envkey;
+	my $now = time;
+	my $lastseen;
+	my $age;
+	my $size;
+
+	print "    = I = Cleaning up AlertQueue, $queuename\n" if ($DEBUG >= 1); 
+	if ($queue->{'alerts'}) {
+		foreach $alerterkey (keys $queue->{'alerts'}) {
+			print "        = I = Now Processing alerts for $alerterkey\n";
+			foreach $envkey (keys $queue->{'alerts'}->{$alerterkey}) {
+				$lastseen = $queue->{'alerts'}->{$alerterkey}->{$envkey}->{'lastseen'};
+				$age = $now - $lastseen;
+				if ($age > $STALEALARM) {
+					print "            = I = Deleting stale alarm for $envkey\n";
+					delete $queue->{'alerts'}->{$alerterkey}->{$envkey};
+				} else {
+					print "            = I = Leaving alarm alone for $envkey\n";
+				}
+			}
+			# lets see if we've deleted the last alert for this alerter, if so, prune it's entire tree.
+			$size = keys($queue->{'alerts'}->{$alerterkey});
+			if ($size > 0) {
+				# still some alerts left, do nothing. 
+			} else {
+				print "            = I = We've deleted all alerts for this alerter $alerterkey\n"; 
+				delete $queue->{'alerts'}->{$alerterkey};
+			}
+		}
+	} else { 
+		print "        = I = No Alarms in queue $queuename, skipping\n";
+	}
+	print "   = I = Finished cleaning queue $queuename\n" if ($DEBUG >= 1);
+
+}
+
+sub setupQueue { 
+	my $queue = $_[0];
+	my $queuename = $_[1];
+
+	$queue->{'name'} = $queuename;
+	$queue->{'surpressed'} = 0;
+
+}
+
+sub runAlertQueue {
+
+
+
+}
