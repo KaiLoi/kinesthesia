@@ -47,7 +47,7 @@ my $parser = XML::LibXML->new();
 my %ENV;
 
 # Start the Daemon and load in the config file.
-print "\n*** Starting Kinethesia Fetish Daemon ***\n\n";
+print "\n*** Starting Kinethesia Talisman Daemon ***\n\n";
 print "= I = Reading in config file: $CONFIGFILE\n";
 my $cfg = loadAndParseConfig();
 print "\n= I = Config file read\n";
@@ -61,10 +61,10 @@ if ($DAEMON) {
 # and needs to print to term.
 $| = 1;
 
-
-
-
-
+# First thing to do is start all it's configured Fetish Daemons. 
+startFetishDaemons();
+# Then lets start our configured peristent connections for communication to each.
+connectToFetishDaemons();
 
 #### Non POE subs below this line #####
 
@@ -75,55 +75,110 @@ sub loadAndParseConfig {
 
         if ($xml->findvalue("TDConfig/debug")) {
                 $DEBUG = $xml->findvalue("TDConfig/debug");
-                print "\n= I = Loading Debug Setting from config file: $DEBUG\n" if ($DEBUG >= 1);
+                print "\n    = I = Loading Debug Setting from config file: $DEBUG\n" if ($DEBUG >= 1);
         }
         if ($xml->findvalue("TDConfig/bindaddress")) {
                 $BINDADDRESS = $xml->findvalue("TDConfig/bindaddress");
-                print "= I = Loading bind address from config file: $BINDADDRESS\n" if ($DEBUG >= 1);
+                print "    = I = Loading bind address from config file: $BINDADDRESS\n" if ($DEBUG >= 1);
         }
 	if ($xml->findvalue("TDConfig/port")) {
                 $DAEMONPORT = $xml->findvalue("TDConfig/port");
-                print "= I = Loading daemon port from config file: $DAEMONPORT\n" if ($DEBUG >= 1);
+                print "    = I = Loading daemon port from config file: $DAEMONPORT\n" if ($DEBUG >= 1);
         }
 	if ($xml->findvalue("TDConfig/alertdaemon")) {
                 $ALERTDAEMONADDR = $xml->findvalue("TDConfig/alertdaemon");
-                print "= I = Loading Alert Daemon address from config file: $ALERTDAEMONADDR\n" if ($DEBUG >= 1);
+                print "    = I = Loading Alert Daemon address from config file: $ALERTDAEMONADDR\n" if ($DEBUG >= 1);
         }
 	if ($xml->findvalue("TDConfig/alertdaemonport")) {
                 $ALERTDAEMONPORT = $xml->findvalue("TDConfig/alertdaemonport");
-                print "= I = Loading Alert Daemon port from config file: $ALERTDAEMONPORT\n" if ($DEBUG >= 1);
+                print "    = I = Loading Alert Daemon port from config file: $ALERTDAEMONPORT\n" if ($DEBUG >= 1);
         }
 	if ($xml->findvalue("TDConfig/shadow")) {
                 $SHADOWADDR = $xml->findvalue("TDConfig/shadow");
-                print "= I = Loading Shadow address from config file: $SHADOWADDR\n" if ($DEBUG >= 1);
+                print "    = I = Loading Shadow address from config file: $SHADOWADDR\n" if ($DEBUG >= 1);
         }
 	if ($xml->findvalue("TDConfig/shadowport")) {
                 $SHADOWPORT = $xml->findvalue("TDConfig/shadowport");
-                print "= I = Loading Shadow port from config file: $SHADOWPORT\n" if ($DEBUG >= 1);
+                print "    = I = Loading Shadow port from config file: $SHADOWPORT\n" if ($DEBUG >= 1);
         }
         if ($xml->findvalue("TDConfig/serverkey")) {
                 $SERVERKEY = $xml->findvalue("TDConfig/serverkey");
-                print "= I = Loading Server Key from config file: $SERVERKEY\n" if ($DEBUG >= 1);
+                print "    = I = Loading Server Key from config file: $SERVERKEY\n" if ($DEBUG >= 1);
         }
         if ($xml->findvalue("TDConfig/servercrt")) {
                 $SERVERCRT = $xml->findvalue("TDConfig/servercrt");
-                print "= I = Loading Server Certificate from config file: $SERVERCRT\n" if ($DEBUG >= 1);
+                print "    = I = Loading Server Certificate from config file: $SERVERCRT\n" if ($DEBUG >= 1);
         }
         if ($xml->findvalue("TDConfig/cacrt")) {
                 $CACRT = $xml->findvalue("TDConfig/cacrt");
-                print "= I = Loading CA Certificate from config file: $CACRT\n" if ($DEBUG >= 1);
+                print "    = I = Loading CA Certificate from config file: $CACRT\n" if ($DEBUG >= 1);
         }
         if ($xml->findvalue("TDConfig/clientkey")) {
                 $CLIENTKEY = $xml->findvalue("TDConfig/clientkey");
-                print "= I = Loading Client Key from config file: $CLIENTKEY\n" if ($DEBUG >= 1);
+                print "    = I = Loading Client Key from config file: $CLIENTKEY\n" if ($DEBUG >= 1);
         }
         if ($xml->findvalue("TDConfig/clientcrt")) {
                 $CACRT = $xml->findvalue("TDConfig/clientcrt");
-                print "= I = Loading Client Certificate from config file: $CLIENTCRT\n" if ($DEBUG >= 1);
+                print "    = I = Loading Client Certificate from config file: $CLIENTCRT\n" if ($DEBUG >= 1);
         }
         return $xml;
 
 }
 
+sub startFetishDaemons {
+	my @nodes;
+	my $name;
+	my $fetishname;
+	my @temp;
+
+	print "\n= I = Starting Fetish Daemons configured in $CONFIGFILE\n\n" if ($DEBUG >= 1);
+	@nodes = returnConfiguredFetishes();
+	for $name (@nodes) {
+		@temp = split(/-/, $name);
+		$fetishname = $temp[1];
+		print "    = I = Starting Fetish Daemon $fetishname..." if ($DEBUG >= 1);
+#		system("/usr/local/bin/fetishdaemon.pl $fetishname 2> /dev/null");
+		print "[OK]\n" if ($DEBUG >= 1);
+	}
+	print "\n= I = All configured Fetish Daemons Started\n" if ($DEBUG >= 1);
+}
+
+sub connectToFetishDaemons {
+	my @nodes;
+	my $node;
+	my $addr;
+	my $port;
+	my $name;
+
+	print "\n= I = Connecting to all Configured Fetish Daemons\n\n" if ($DEBUG >= 1);
+	@nodes = returnConfiguredFetishes();
+	foreach $node (@nodes) {
+		$name = (split(/-/, $node))[1];
+		$addr = $cfg->findvalue("/cfg/$node/bindaddress");
+		$port = $cfg->findvalue("/cfg/$node/daemonport");
+		print "    = I = Connecting to Fetish Daemon for $name on $addr:$port\n" if ($DEBUG >= 1);
+	}
+	print "\n= I = Finished Connecting to all Daemons\n"  if ($DEBUG >= 1);
+}
 
 
+sub returnConfiguredFetishes {
+	my $node;
+	my @nodes;
+	my $nodename;
+	my $subnode;
+	my $name;
+
+	for $node ($cfg->findnodes('/cfg')) {
+		for $subnode ($node->findnodes('./*')) {
+			$name = $subnode->nodeName();
+			if ($name =~ m/^fd-.+/) {
+				push(@nodes, $name);
+			}
+		}
+	}
+			
+	return(@nodes);
+}
+
+### END OF LINE ###

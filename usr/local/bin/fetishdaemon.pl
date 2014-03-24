@@ -1,4 +1,4 @@
-#!/usr/bin/pperl
+#!/usr/bin/perl
 
 ######################################################################
 ######################################################################
@@ -57,10 +57,10 @@ my $parser = XML::LibXML->new();
 my %ENV;
 
 # Start the Daemon and load in the config file.
-print "\n*** Starting Fetish Daemon for fetish $FETISH ***\n\n";
-print "= I = Reading in config file: $CONFIGFILE\n";
+print "\n*** Starting Fetish Daemon for fetish $FETISH ***\n\n" if ($DEBUG >= 1);
+print "= I = Reading in config file: $CONFIGFILE\n" if ($DEBUG >= 1);
 my $cfg = loadAndParseConfig();
-print "\n= I = Config file read\n";
+print "\n= I = Config file read\n" if ($DEBUG >= 1);
 
 # Check if the conig file has a section for the fetish called. 
 if (!$cfg->findnodes("fd-$FETISH")) {
@@ -223,7 +223,7 @@ sub socket_input {
 			# if the client sends a "poll" type query, respond. Acts as a kepalive, if needed, from the client. 
 			$response = pollreponse();
 		} else {
-			# We don't know what thety asked for, inform them with an error type message.
+			# We don't know what they asked for, inform them with an error type message.
 			$response = errresponse("Unknown query command sent to fetish daemon $FETISH");
 		}
 		if ($DEBUG == 1) {
@@ -455,16 +455,34 @@ sub raiseAlerts {
 		# do some comparisons for alerts and warnings. 
 		if ($critval) {
 			if ($pollval >= $critval) {
-				sendAlert($environmental, "CRITICAL", "CRITICAL ALERT: Polled value for $environmental of $pollval from $FETISH exceeds configured critical value of $critval!");
+				# Raise a critical Alert to the ALert Daemon for this env. 
+				sendAlert($environmental, "CRITICAL", 1,  "CRITICAL ALERT: Polled value for $environmental of $pollval from $FETISH exceeds configured critical value of $critval!");
+				# set that we're currently alerting for this environmental.
+				$ENV{$environmental}{'critalert'} = 1;
 				print "    = C = CRITICAL!: Polled value for $environmental of $pollval exceeds configured critical value for this environmental of $critval! Raising CRITICAL ALERT\n" if ($DEBUG == 1);
-			}
-		} elsif ($warnval) {
-			if ($pollval >= $warnval) {
-				sendAlert($environmental, "WARNING", "WARNING: Polled value for $environmental of $pollval from $FETISH exceeds configured warning value of $warnval!");
-				print "    = W = WARNING!: Polled value for $environmental of $pollval exceeds configured warning value for this environmental of $warnval! Raising WARNING ALERT\n" if ($DEBUG == 1);
+			} elsif (($pollval <= $critval) && ($ENV{$environmental}{'critalert'} == 1)) {
+				# We're under threshold but currently in alerting for this environmetnal. Lets clear the alerting and notify the alert Daemon.
+				sendAlert($environmental, "CRITICAL", 0, "CLEAR: Polled value for $environmental has returned to nominal level.");
+				$ENV{$environmental}{'critalert'} = 0;
+				print "    = I = Clearing Critical alert for $environmental\n" if ($DEBUG == 1);
 			}
 		}
+		# if we have a warning value configured and are not currently alarming for a critical value, send or clear a warning. 
+		if (($warnval) && (!$ENV{$environmental}{'critalert'})) {
+			if ($pollval >= $warnval) {
+				sendAlert($environmental, "WARNING", 1, "WARNING: Polled value for $environmental of $pollval from $FETISH exceeds configured warning value of $warnval!");
+				$ENV{$environmental}{'warnalert'} = 1;
+				print "    = W = WARNING!: Polled value for $environmental of $pollval exceeds configured warning value for this environmental of $warnval! Raising WARNING ALERT\n" if ($DEBUG == 1);
+			} elsif (($pollval <= $warnval) && ($ENV{$environmental}{'warnalert'} == 1)) {
+				sendAlert($environmental, "WARNING", 0, "CLEAR: Polled value for $environmental has returned to nominal level.");
+				$ENV{$environmental}{'warnalert'} = 0;
+				print "    = I = Clearing Warning alert for $environmental\n" if ($DEBUG == 1);
+			}	
+		}
 		# reset the variables to undefined for next run or stuff carries over.
+		if (!$ENV{$environmental}{'warnalert'} && !$ENV{$environmental}{'critalert'}) {
+			print "    = I = Curently no abnormal states detected, proeeding\n" if ($DEBUG == 1);
+		}
 		$pollval = "";
 		$warnval = "";
 		$critval = "";
@@ -552,6 +570,13 @@ sub populateResults {
 		print "    = I = Populating the Environmntal Hash for Environmental $key with Value: $pollval and Quality: $qualval\n" if ($DEBUG == 1);
 		$ENV{"$key"}{'value'} = $pollval;
 		$ENV{"$key"}{'qual'} = $qualval;
+		# if the warnalert and critalert variables don't exist then this is our first run and we should create them. 
+		if (!$ENV{"$key"}{'warnalert'}) {
+			$ENV{"$key"}{'warnalert'} = 0;
+		}
+		if (!$ENV{"$key"}{'critalert'}) {
+                        $ENV{"$key"}{'critalert'} = 0;
+                }
 	}
 	print "\n= I = Environmntal Hash Populated\n\n" if ($DEBUG == 1);
 	return(1);
@@ -560,6 +585,7 @@ sub populateResults {
 sub sendAlert {
 	my $environmental = shift;
 	my $level = shift;
+	my $alerting = shift;
 	my $msg = shift;
 	my $xml;
 
@@ -568,7 +594,7 @@ sub sendAlert {
     		RemotePort    => $ALERTDAEMONPORT,
     		Filter        => [ "POE::Filter::SSL", crt => $CLIENTCRT, key => $CLIENTKEY, client => 1 ],
     		Connected     => sub {
-			$xml = formAlert($environmental, $level, $msg);
+			$xml = formAlert($environmental, $level, $alerting, $msg);
 			$_[HEAP]{server}->put($xml);
 		},
 		ServerInput   => sub {
@@ -580,10 +606,12 @@ sub sendAlert {
 sub formAlert {
 	my $environmental = shift;
 	my $level = shift;
+	my $alerting = shift;
 	my $msg = shift;
         my $root;
 	my $envtag;
 	my $alerttag;
+	my $alertingtag;
         my $typetag;
         my $leveltag;
         my $msgtag;
@@ -605,6 +633,10 @@ sub formAlert {
         $msgtag = $xml->createElement('msg');
         $alerttag->addChild($msgtag);
         $msgtag->addChild($xml->createTextNode("$msg"));
+	$alertingtag = $xml->createElement('alerting');
+	$alerttag->addChild($alertingtag);
+	$alertingtag->addChild($xml->createTextNode($alerting));
+
         return $xml;
 }
 

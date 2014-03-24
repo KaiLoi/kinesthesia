@@ -336,6 +336,7 @@ sub processAlert {
 	my $level;
 	my $msg;
 	my $alerter;
+	my $alerting;
 	my $root;
 	my $env;
 
@@ -346,19 +347,26 @@ sub processAlert {
 	# Find out which queue each Alert goes into.
 	foreach ($xml->findnodes("$alerter/alert")) {
 		$level = $_->findvalue("./level");
+		$alerting = $_->findvalue("./alerting");
 		$msg = $_->findvalue("./msg");
 		$env = $_->findvalue("./environmental");
 		# Add the alert to it's alert queue. Split up in case we want to handle them differently later.
 		# also , this way Critical alerts always flow throguh first. 
-		if ($level eq "CRITICAL") {
+		if (($level eq "CRITICAL") && ($alerting == 1)) {
 			print "    = I = Putting Alert in the Critical queue.\n" if ($DEBUG >= 1);
 			addAlert(\%CRITQUEUE, $level, $alerter, $env, $msg);
-		} elsif ($level eq "WARNING") {
+		} elsif (($level eq "WARNING") && ($alerting == 1)) {
 			print "    = I = Putting Alert in the Warning queue.\n" if ($DEBUG >= 1);
 			addAlert(\%WARNQUEUE, $level, $alerter, $env, $msg);
 		} elsif ($level eq "INFO") {
 			print "    = I = Putting Alert in the Info queue.\n" if ($DEBUG >= 1);
 			addAlert(\%INFOQUEUE, $level, $alerter, $env, $msg);
+		} elsif (($level eq "CRITICAL") && ($alerting == 0)) { 
+			print "    = I = Removing Alert from the Critical Queue.\n" if ($DEBUG >= 1);
+			delAlert(\%CRITQUEUE, $level, $alerter, $env, $msg);
+		} elsif (($level eq "WARNING") && ($alerting == 0)) {
+			print "    = I = Removing Alert from the Warning Queue.\n" if ($DEBUG >= 1);
+			delAlert(\%WARNQUEUE, $level, $alerter, $env, $msg);
 		} else {
 			# some weird value received we can't put this alert in a queue
 			print "    = I = Unable to correctly catagorise Alert with level $level.\n" if ($DEBUG >= 1);
@@ -371,6 +379,42 @@ sub processAlert {
 	$env = "";
 	print "= I = All Alerts in this packet processed.\n\n" if ($DEBUG >= 1);
 	return(1);
+}
+
+sub delAlert {
+	my $queue = shift;
+        my $level = shift;
+        my $alerter = shift;
+        my $env = shift;
+        my $msg = shift;
+	my $size;
+
+
+#	print Dumper(%CRITQUEUE);
+#	print "\n\n";
+#	print Dumper(%WARNQUEUE);
+	print "\n\n";
+	if ($level eq "CRITICAL") {
+		print "    = I = Deleting Alert from the Critical Queue.\n" if ($DEBUG >= 1);
+		delete $queue->{'alerts'}->{$alerter}->{$env};
+	} elsif ($level eq "WARNING") {
+		print "    = I = Deleting Alert from the Warning Queue.\n" if ($DEBUG >= 1);
+		delete $queue->{'alerts'}->{$alerter}->{$env};
+	} 
+
+	$size = keys($queue->{'alerts'}->{$alerter});
+	if ($size > 0) {
+		# still some alerts left, do nothing. 
+	} else {
+		print "            = I = We've deleted all alerts for this alerter $alerter\n";
+		delete $queue->{'alerts'}->{$alerter};
+	}
+#	print Dumper(%CRITQUEUE);
+#       print "\n\n";
+#      print Dumper(%WARNQUEUE);
+#        print "\n\n";
+
+
 }
 
 sub addAlert {
@@ -404,9 +448,11 @@ sub cleanAlertQueue {
 	my $lastseen;
 	my $age;
 	my $size;
+	my @alertkeys;
 
 	print "    = I = Cleaning up AlertQueue, $queuename\n" if ($DEBUG >= 1); 
-	if ($queue->{'alerts'}) {
+	@alertkeys = keys($queue->{'alerts'});
+	if (@alertkeys > 0) {
 		foreach $alerterkey (keys $queue->{'alerts'}) {
 			print "        = I = Now Processing alerts for $alerterkey\n";
 			foreach $envkey (keys $queue->{'alerts'}->{$alerterkey}) {
@@ -441,6 +487,7 @@ sub setupQueue {
 
 	$queue->{'name'} = $queuename;
 	$queue->{'surpressed'} = 0;
+	$queue->{'alerts'} = {};
 
 }
 
