@@ -194,39 +194,54 @@ sub socket_input {
 	my $sub;
 	my $command = "";
 	my $immediate = 0;
+	my $msgtype = "";
 	my $refresh;
 	my $ref;
 	my $xml;
+	my $root;
+	my $sender;
 
-	# Take the XML received and create an new XML object from it. 
-	$xml = XML::LibXML->load_xml(string => $buf);
-	$command = $xml->findvalue("/query/command");
-	$immediate = $xml->findvalue("/query/immediate");
-	print "= I = Client command received :\n\n$buf\n" if ($DEBUG == 1);
-	print "= SSL = Authing Client Command\n" if ($DEBUG == 1);
+	print "= I = Client command received " if ($DEBUG >= 1);
+	if ($DEBUG >= 2 ) {
+		print ": \n\n$buf\n" if ($DEBUG >= 2);
+	} elsif ($DEBUG >= 1) {
+		print "\n";
+	}
+	print "= SSL = Authing Client Packet\n" if ($DEBUG >= 1);
 	if ($heap->{sslfilter}->clientCertValid()) {
-		print "= SSL = Client Certificate Valid, Authorised\n" if ($DEBUG == 1);
-		# If the talisman Daemon requests a realtime value from the fetish, update the values 
-		# and return them. Note this will slow down the query response. 
-		if ($immediate) {
-			print "\n= I = Clint has requested realtime fetish values, refreshing.\n" if ($DEBUG == 1);
-			pollfetish();
-		}
-		# The option is available here to query the Fetish Daemon for only specific values.
-		# the decision at this time is to only ask for everything it has and filter to the 
-		# shadow at the talisman daemon level. But this can be changed at a later time for 
-		# additional filtering and traffic efficiency on low bandwidth links.
-		if ($command eq "all") {
-			# Send the client all environmntals, values and quality levels currently stored in the global hash.
-			$response = allresponse();
-		} elsif ($command eq "poll") {
-			# if the client sends a "poll" type query, respond. Acts as a kepalive, if needed, from the client. 
+		print "= SSL = Client packet authenticated!\n" if ($DEBUG >= 1);
+		# Take the XML received and create an new XML object from it. 
+		$xml = XML::LibXML->load_xml(string => $buf);
+		$root = $xml->documentElement();
+                $sender = $root->nodeName();
+		$msgtype = $xml->findvalue("/$sender/msgtype");
+		if ($msgtype eq "POLL") {
 			$response = pollreponse();
+		} elsif ($msgtype eq "QUERY") {
+			$command = $xml->findvalue("/$sender/query/value");
+			$immediate = $xml->findvalue("/$sender/query/immediate");
+			# If the talisman Daemon requests a realtime value from the fetish, update the values 
+			# and return them. Note this will slow down the query response. 
+			if ($immediate) {
+				print "\n= I = Client has requested realtime fetish values, refreshing.\n" if ($DEBUG == 1);
+				pollfetish();
+			}
+			# The option is available here to query the Fetish Daemon for only specific values.
+			# the decision at this time is to only ask for everything it has and filter to the 
+			# shadow at the talisman daemon level. But this can be changed at a later time for 
+			# additional filtering and traffic efficiency on low bandwidth links.
+			if ($command eq "all") {
+				# Send the client all environmntals, values and quality levels currently stored in the global hash.
+				$response = allresponse();
+			} else {
+				# We don't know what they asked for, inform them with an error type message.
+				$response = errresponse("Unknown query command sent to fetish daemon $FETISH");
+			}
 		} else {
-			# We don't know what they asked for, inform them with an error type message.
-			$response = errresponse("Unknown query command sent to fetish daemon $FETISH");
+			# We don't know what kind of packet this is. Give an Error to the requestor.
+			$response = errresponse("Unknown message type sent to fetish daemon $FETISH");
 		}
-		if ($DEBUG == 1) {
+		if ($DEBUG >= 2) {
 			print "= I = Sending Client Result:\n\n";
 			print $response->toString(1);
 			print "\n";
@@ -608,6 +623,7 @@ sub formAlert {
 	my $level = shift;
 	my $alerting = shift;
 	my $msg = shift;
+	my $xml;
         my $root;
 	my $envtag;
 	my $alerttag;
@@ -616,7 +632,7 @@ sub formAlert {
         my $leveltag;
         my $msgtag;
 
-        my $xml = XML::LibXML::Document->new('1.0', 'utf-8');;
+        $xml = XML::LibXML::Document->new('1.0', 'utf-8');;
         $root = $xml->createElement("$FETISH");
         $xml->addChild($root);
         $typetag = $xml->createElement('msgtype');
