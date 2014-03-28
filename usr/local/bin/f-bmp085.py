@@ -18,7 +18,7 @@ bmp = Adafruit_BMP085.BMP085(0x77)
 # bmp = BMP085(0x77, 2)  # HIRES Mode
 # bmp = BMP085(0x77, 3)  # ULTRAHIRES Mode
 
-#temp = bmp.readTemperature()
+temp = bmp.readTemperature()
 
 # Read the current barometric pressure level
 #pressure = bmp.readPressure()
@@ -34,4 +34,4 @@ bmp = Adafruit_BMP085.BMP085(0x77)
 
 pressure = bmp.readPressure()
 pressure = pressure /100.0
-print ("pressure:%s") % (pressure)
+print ("pressure:%s,temp:%s") % (pressure, temp)

@@ -250,6 +250,8 @@ sub socket_input {
 		$heap->{socket_wheel}->put($response);
 	} else {
 		# The Client Certificate failed authentication. Be nice and tell them so then kick them off the server. 
+                # might change this in the future to a clean disconnect with no response. At the momnt it's useful for
+                # debugging.
 		print "= SSL = Client Certificate Invalid! Rejecting command and disconnecting!\n" if ($DEBUG == 1);
 		$response = errresponse("INVALID CERT! Connection rejected!");
 		print "= I = Sending Client Result:\n$response\n" if ($DEBUG == 1);

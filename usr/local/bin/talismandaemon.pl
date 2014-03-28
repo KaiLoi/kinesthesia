@@ -10,6 +10,8 @@
 ## v1:          First implementation of a Talsiman Daemon for the 
 ##                      Kinethesia SW/HW framework.
 
+#sub POE::Kernel::TRACE_REFCNT () { 1 }
+
 use strict;
 use warnings;
 use Data::Dumper;
@@ -24,15 +26,17 @@ use POE qw(
         Filter::Stackable
         Filter::Stream
         Component::Client::TCP
+	API::Peek
 );
 
-my $NAME = "SETMEINCONFIG";
+my $TALSIMANNAME = "SETMEINCONFIG";
 my $DAEMON = 0;
 my $DEBUG = 1;
 my $DAEMONPORT = 1972;
 my $BINDADDRESS = "127.0.0.1";
 my $POLLPERIOD = 30; # How often to poll all the fetish Daemons or their values to store.
 my $KEEPALIVE = 10; # How often to end a kepalive to each fetishdaemon to make sure they are working.
+my $ENVCLEANPERIOD = 30; # How often to clean out stale environmentals from the ENV hash. 
 my $SERVERKEY = "/etc/kinethesia/certs/server.key";
 my $SERVERCRT = "/etc/kinethesia/certs/server.crt";
 my $CLIENTCRT = "/etc/kinethesia/certs/client1.crt";
@@ -45,9 +49,10 @@ my $SHADOWADDR = "127.0.0.1";
 my $SHADOWPORT = 1970;
 # Create an XML parser engine for the program.
 my $parser = XML::LibXML->new();
+my $api = POE::API::Peek->new();
 # Global hash for storing the env details returned by fetish Daemons.
 my %ENV;
-# Global hash for storing conigured fetishes and their current state. 
+# Global hash for storing conigured fetishes and their current connectivity and reporting state. 
 my %FETISHES;
 
 # Start the Daemon and load in the config file.
@@ -71,7 +76,7 @@ $| = 1;
 #startFetishDaemons()
 
 # Then lets start our configured peristent connections for communication to each.
-connectToFetishDaemons();
+initialConnectToFetishDaemons();
 
 # POE session for the SSL TCP server to listen for client queries and respond with the appropreate values. 
 POE::Session->create(
@@ -90,6 +95,7 @@ POE::Session->create(
 POE::Session->create(
         inline_states => {
                 _start => sub {
+			$_[KERNEL]->alias_set('FetishWatchdog');
                         $_[HEAP]->{next_alarm_time} = int(time()) + $KEEPALIVE;
                         $_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
                 },
@@ -112,7 +118,63 @@ POE::Session->create(
 
 				}
 			}
+			print "= I = Finished Checking all fetishes.\n"  if ($DEBUG >= 1);
                         $_[HEAP]->{next_alarm_time} = $_[HEAP]->{next_alarm_time} + $KEEPALIVE;
+                        $_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
+                },
+        },
+);
+
+# Create POE session to keep the environmental  clean and relevent. 
+# Basically this sub program fires every 5 min and cleans out any environmentals 
+# that haven't reported in 5 min.  If we haven't heard from it in 5 min 
+# we probably don't care about the value anymore as it's old 
+# and stale.  Stops the memory from filling with
+# old stale environemtnals and fetishes that are no longer reporting. Also
+# prevents the Shadow from querying an environmental no longer in the hash.
+POE::Session->create(
+        inline_states => {
+                _start => sub {
+			$_[KERNEL]->alias_set('EnvCleaner');
+                        $_[HEAP]->{next_alarm_time} = int(time()) + $ENVCLEANPERIOD;
+                        $_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
+                },
+
+                tick => sub {
+			my $envkey;
+			my $fetkey;
+			my $now = time();
+			my $age;
+			my $size;
+	
+                        print "\n= I = Cleaning up Environmental DB\n" if ($DEBUG >= 1);
+			# Run through the ENV hash and check each environmntal and subsequent fetish for the age of the last reported data. 
+			foreach $envkey (keys $ENV{$TALSIMANNAME}) {
+				foreach $fetkey (keys $ENV{$TALSIMANNAME}{$envkey}) {
+					$age = $now - $ENV{$TALSIMANNAME}{$envkey}{$fetkey}{'age'};
+					# If the stored fetish value is older than 5 min it's getting stale, lets clean it out until it reports again.
+					if ($age > 30) {
+						print "    = I = Cleaning out old Environmental $envkey for fetish $fetkey\n" if ($DEBUG >= 1);
+						delete $ENV{$TALSIMANNAME}{$envkey}{$fetkey};
+					} else { 
+						print "    = I = Leaving Environmental $envkey for fetish $fetkey alone as it is still current\n"  if ($DEBUG >= 1);
+					}
+				}
+				# lets make sure that there are still some reporting fetishes for this environmental. 
+				$size = keys($ENV{$TALSIMANNAME}{$envkey});
+				if ($size > 0) {
+					# Still fetishes responding for this environmental do nothing.
+				} else {
+					# We've Deleted all reporting fetishes for this Environmental. Delete it from our DB so it's not reported in our capabilities and 
+					# update any subscribed shadow with the info. 
+					print "        = I = We've Deleted all reporting fetishes for this Environmental. Deleting environmental from our DB.\n" if ($DEBUG >= 1);
+					delete $ENV{$TALSIMANNAME}{$envkey};
+					#FIXME!
+					# notifyShadowOfCapabilityChange($envkey);
+				}
+			}
+                        print "= I = Finished cleaning up Environmental DB. Sleeping for $ENVCLEANPERIOD seconds.\n\n" if ($DEBUG >= 1);
+                        $_[HEAP]->{next_alarm_time} = $_[HEAP]->{next_alarm_time} + $ENVCLEANPERIOD;
                         $_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
                 },
         },
@@ -122,6 +184,7 @@ POE::Session->create(
 sub parent_start {
         my $heap = $_[HEAP];
 
+	$_[KERNEL]->alias_set('TalismanListener');
         print "\n= I = Starting POE session and initialising socket\n" if ($DEBUG == 1);
         $heap->{listener} = POE::Wheel::SocketFactory->new(
                 BindAddress  => $BINDADDRESS,
@@ -174,6 +237,7 @@ sub socket_death {
 sub socket_success {
         my ($heap, $kernel, $connected_socket, $address, $port) = @_[HEAP, KERNEL, ARG0, ARG1, ARG2];
 
+	$_[KERNEL]->alias_set('SSLSession');
         print "= I = CONNECTION from $address : $port \n" if ($DEBUG == 1);
         print "= SSL = Creating SSL Object\n" if ($DEBUG == 1);
         $heap->{sslfilter} = POE::Filter::SSL->new(
@@ -202,48 +266,73 @@ sub socket_input {
         my ($heap, $kernel, $buf) = @_[HEAP, KERNEL, ARG0];
         my $response = "";
         my $sub;
+	my $root;
+	my $sender;
+	my $msgtype;
         my $command = "";
         my $immediate = 0;
         my $refresh;
         my $ref;
         my $xml;
+	my $value;
+	my @envavailable;
+	my @invavailable;
 
-        # Take the XML received and create an new XML object from it. 
-        $xml = XML::LibXML->load_xml(string => $buf);
-        $command = $xml->findvalue("/query/command");
-        print "= I = Client command received :\n\n$buf\n" if ($DEBUG == 1);
-        print "= SSL = Authing Client Command\n" if ($DEBUG == 1);
+	print "= I = Client command received " if ($DEBUG >= 1);
+        if ($DEBUG >= 2 ) {
+                print ": \n\n$buf\n" if ($DEBUG >= 2);
+        } elsif ($DEBUG >= 1) {
+                print "\n";
+        }
+        print "= SSL = Authing Client Packet\n" if ($DEBUG >= 1);
         if ($heap->{sslfilter}->clientCertValid()) {
-                print "= SSL = Client Certificate Valid, Authorised\n" if ($DEBUG == 1);
-#                # The option is available here to query the Fetish Daemon for only specific values.
-#                # the decision at this time is to only ask for everything it has and filter to the 
-#                # shadow at the talisman daemon level. But this can be changed at a later time for 
-#                # additional filtering and traffic efficiency on low bandwidth links.
-#                if ($command eq "all") {
-#                        # Send the client all environmntals, values and quality levels currently stored in the global hash.
-#                        $response = allresponse();
-#                } elsif ($command eq "poll") {
-#                        # if the client sends a "poll" type query, respond. Acts as a kepalive, if needed, from the client. 
-#                        $response = pollreponse();
-#                } else {
-#                        # We don't know what they asked for, inform them with an error type message.
-#                        $response = errresponse("Unknown query command sent to fetish daemon $FETISH");
-#                }
-#                if ($DEBUG == 1) {
-#                        print "= I = Sending Client Result:\n\n";
-#                        print $response->toString(1);
-#                        print "\n";
-#                }
-#                # Send the client the actual XML.
-#                $heap->{socket_wheel}->put($response);
+                print "= SSL = Client packet authenticated!\n" if ($DEBUG >= 1);
+                # Take the XML received and create an new XML object from it. 
+                $xml = XML::LibXML->load_xml(string => $buf);
+                $root = $xml->documentElement();
+		# get the name of the connected clint for analyzing their XML tree. 
+                $sender = $root->nodeName();
+                $msgtype = $xml->findvalue("/$sender/msgtype");
+		# If the message type is a Query then get the type and respond wih the appropreate info. 
+		if ($msgtype eq "QUERY") {
+			# grab the query and lets do somthing with it.
+			$value = $xml->findvalue("/$sender/query/value");
+			if ($value eq "envcapability") {
+				# get the list of environmentals currently stored/indexed by this talisman daemon for the query type. 
+				@envavailable = getEnvironmentals();
+				# return a list of currenrtly indexed and current Environmental values indexed by this TalsimanDaemon.
+				$response = returnEnvCapbiliy(\@envavailable);
+			} elsif ($value eq "invcapability") {
+				# get the list of invocations currently stored/indexed by this talisman daemon for the query type. 
+				@invavailable = getInvocations();
+				# return a list of currenrtly indexed and current Invocation Daemons indexed by this TalsimanDaemon.
+				$response = returnInvCapbiliy(\@invavailable);
+			# if this is a query for an environmental we currently store, return it as queried. We only do this for 
+			# environmentals because invocations are triggered by the CMD messgae type. Immediate realtime fetish queries are 
+			# also handled by the CMD type. 
+			} elsif ($value ~~ @envavailable) {
+				$response = getAndReturnEnv($value);
+			} else {
+				$response = errresponse("Unknown query command sent to Talisman Daemon");
+			}
+		} elsif ($msgtype eq "CMD") { 
+			# docommandy type stuff here, unefined so far. 
+		} else {
+			$response = errresponse("Unknown message type sent to Talisman Daemon");
+		}
+		# Send the response we have generated. 
+		$heap->{socket_wheel}->put($response);
         } else {
-                # The Client Certificate failed authentication. Be nice and tell them so then kick them off the server. 
+		# The Client Certificate failed authentication. Be nice and tell them so then kick them off the server. 
+		# might change this in the future to a clean disconnect with no response. At the momnt it's useful for
+		# debugging.
                 print "= SSL = Client Certificate Invalid! Rejecting command and disconnecting!\n" if ($DEBUG == 1);
-#                $response = errresponse("INVALID CERT! Connection rejected!");
+                $response = errresponse("INVALID CERT! Connection rejected!");
                 print "= I = Sending Client Result:\n$response\n" if ($DEBUG == 1);
                 $heap->{socket_wheel}->put($response);
                 $kernel->delay(socket_death => 1);
         }
+
 }
 
 # Start the POE Kernel and run all configured services. 
@@ -251,14 +340,15 @@ $poe_kernel->run();
 
 #### Non POE subs below this line #####
 
+### Sub to load and parse the config from disk. 
 sub loadAndParseConfig {
 
         my $cfgref = $parser->parse_file($CONFIGFILE);
         my $xml = $cfgref -> getDocumentElement();
 
 	if ($xml->findvalue("TDConfig/name")) {
-		$NAME = $xml->findvalue("TDConfig/name");
-		print "\n    = I = Loading Talsiman Name from config file: $NAME\n" if ($DEBUG >= 1);
+		$TALSIMANNAME = $xml->findvalue("TDConfig/name");
+		print "\n    = I = Loading Talsiman Name from config file: $TALSIMANNAME\n" if ($DEBUG >= 1);
 	} else { 
 		print "\n    = C = Name not defined in config. This MUST be set! Exiting\n";
 		die;
@@ -315,6 +405,8 @@ sub loadAndParseConfig {
 
 }
 
+### Sub to run through the list of configured feitshes and start them. Using ugly system call for now. Will move to nicer 
+### forking soon. 
 sub startFetishDaemons {
 	my @nodes;
 	my $name;
@@ -322,7 +414,9 @@ sub startFetishDaemons {
 	my @temp;
 
 	print "\n= I = Starting Fetish Daemons configured in $CONFIGFILE\n\n" if ($DEBUG >= 1);
+	# Find all the fetishes configured in the config and put them in an array.
 	@nodes = returnConfiguredFetishes();
+	# Run through the array and attemp to start each Fetish Daemon defiend. 
 	for $name (@nodes) {
 		@temp = split(/-/, $name);
 		$fetishname = $temp[1];
@@ -334,8 +428,8 @@ sub startFetishDaemons {
 }
 
 
-### Sub to connect to the configured fetish daemons and initate a polling loop to each. 
-sub connectToFetishDaemons {
+### Sub to start the initial connect to the configured fetish daemons and initate a polling loop to each. 
+sub initialConnectToFetishDaemons {
 	my @nodes;
 	my $node;
 	my $addr;
@@ -375,6 +469,7 @@ sub connectFetishDaemon {
 	
 
 	POE::Component::Client::TCP->new(
+		Alias => $name,
 		RemoteAddress => $addr,
 		RemotePort    => $port,
 		Filter        => [ "POE::Filter::SSL", crt => '/etc/kinethesia/certs/client1.crt', key => '/etc/kinethesia/certs/client1.key', client => 1 ],
@@ -387,11 +482,24 @@ sub connectFetishDaemon {
 			$_[HEAP]->{$name}->{next_alarm_time} = int(time());   # Immediately trigger an alarm
 			$_[KERNEL]->alarm(tick => $_[HEAP]->{$name}->{next_alarm_time});
 		},
+		ConnectError => sub {
+			# Specify to capture connection refused and surpress STDERR and clean up shutdown correctly.
+
+			$_[KERNEL]->alarm_remove_all();
+                        $_[KERNEL]->alias_remove($name);
+                        delete $_[HEAP]->{wheel};
+                        # clear variables we have set from the heap and shut down the client. 
+                        delete $_[HEAP]->{$name};
+                        $_[KERNEL]->yield('shutdown');
+                        $_[KERNEL]->call('shutdown');			
+			print "    = W = Connection refused, waiting $KEEPALIVE seconds and trying again\n" if ($DEBUG >= 1);
+		}, 
 		# received input back from the server and move on. 
 		ServerInput   => sub {
 			$xml = XML::LibXML->load_xml(string => $_[ARG0]);
 			print "= I = Response received from Server\n"  if ($DEBUG >= 2);
 			print "\n" . $xml->toString(1) . "\n\n" if ($DEBUG >= 2);
+			processFetishResponse($name, $xml);
 		},
 		# inline state to send query to server, then receive response and set a new timer for +Pollperiod. 
 		InlineStates => {
@@ -401,13 +509,13 @@ sub connectFetishDaemon {
 					$xml = createQuery("all", 0);
 					print "\n" . $xml->toString(1) . "\n\n" if ($DEBUG >= 2);
 					# make sure we're connected to the remote end. Some states leave this sub running or a sudden drop right 
-					# before query causes a SW crash. 
+					# before query causes a SW crash withou this check. 
 					if ($_[HEAP]{connected}) {
 						$_[HEAP]{server}->put($xml);
 					} else { 
-						"= W = Not currently connected to $name, waiting for reconnect\n" if ($DEBUG >= 1);
+						print "= W = Not currently connected to $name, waiting for reconnect\n" if ($DEBUG >= 1);
 					}
-					# reset the timer and goround the wheel again
+					# reset the timer and go round the wheel again
 					$_[HEAP]->{$name}->{next_alarm_time}+=$POLLPERIOD;
 					$_[KERNEL]->alarm(tick => $_[HEAP]->{$name}->{next_alarm_time});
 			},
@@ -421,12 +529,18 @@ sub connectFetishDaemon {
 			# reconnect function becuase it only tries once after delay time and gives up. Not good. 
 			$FETISHES{"fd-$name"}{'connected'} = 0;
 			# remove the alarm timer for next iteration. Not doing this causes the sever to continue going around the wheel even after 
-			# the connection has dropped. 
+			# the connection has dropped. It prvents this instance of this sub from exiting. 
 			$_[KERNEL]->alarm_remove_all();
+			$_[KERNEL]->alias_remove($name);
+			delete $_[HEAP]->{wheel};
 			# clear variables we have set from the heap and shut down the client. 
 			delete $_[HEAP]->{$name};
 			$_[KERNEL]->yield('shutdown');
 			$_[KERNEL]->call('shutdown');
+		},
+		ServerError => sub {
+			
+			#do nothing, quieter.
 		},
 	);
 }
@@ -444,8 +558,9 @@ sub createQuery {
 	my $valuetag;
 	my $immediatetag;
 	
+	# Buold an XML repsonse and retun it. 
 	$xml = XML::LibXML::Document->new('1.0', 'utf-8');
-	$root = $xml->createElement("$NAME");
+	$root = $xml->createElement("$TALSIMANNAME");
 	$xml->addChild($root);
 	$typetag = $xml->createElement('msgtype');
 	$typetag->addChild($xml->createTextNode("QUERY"));
@@ -484,6 +599,7 @@ sub returnConfiguredFetishes {
 	return(@nodes);
 }
 
+### Sub to create the global HASH containing all the configutred fetishes and their current connecton state.
 sub loadAndStoreFetishes {
 	my @nodes;
 	my $node;
@@ -491,8 +607,10 @@ sub loadAndStoreFetishes {
 	my $addr;
 	my $port;
 
+	# Grab conigured fetishes from config.
 	@nodes = returnConfiguredFetishes();
 	foreach $node (@nodes) {
+		# grab the fetishes name, port and IP and store them. 
 		$name = (split(/-/, $node))[1];
 		$addr = $cfg->findvalue("/cfg/$node/bindaddress");
 		$port = $cfg->findvalue("/cfg/$node/daemonport");
@@ -505,5 +623,198 @@ sub loadAndStoreFetishes {
 	}
 } 
 
+### Sub to take the reponse from a fetish and parse it's data into the Environmental hash/DB
+sub processFetishResponse {
+	my $envname = shift;
+	my $xml = shift;
+	my $root;
+	my $alerter;
+	my $envtype;
+
+	# initially we'll store this data in a memory hash. But this can easily be replaced
+	# by some kind of SQL DB or any other storage method. 
+	print "    = I = Storing response from Fetish $envname in memory DB\n" if ($DEBUG >= 1);
+	# Find out what fetish this response is from.
+        $root = $xml->documentElement();
+        $alerter = $root->nodeName();
+	if ($alerter ne $envname) {
+		print "    = C = Somehow we got here with a packet not from the daemon we expected! Could be a security issue or a broken fetish daemon!\n" if ($DEBUG >= 1);
+		return(0);
+	}
+	# run through the returned values in this packet and add them to the environmental hash. We're going to change the logic
+	# a bit here. Up till this point we've had fetish->environmental type -> values. We're going to change here to 
+	# environmental type -> fetish -> values. This is because we can have multiple fetishes returning the same environmental 
+	# (like temperature) and we want to be able to filter only the best (by qual) to the shadow so we store them all for 
+	# comparison.
+	foreach ($xml->findnodes("$envname/environmental")) {
+		$envtype = $_->findvalue("./name");
+		$ENV{$TALSIMANNAME}{$envtype}{$envname}{'name'} = $envname;
+		$ENV{$TALSIMANNAME}{$envtype}{$envname}{'value'} = $_->findvalue("./value");
+		$ENV{$TALSIMANNAME}{$envtype}{$envname}{'qual'} = $_->findvalue("./qual");
+		# We're going to store the current time here so we can see how old this value is and chose somthing better if it's 
+		# really old. Also for cleaning the ENV hash.
+		$ENV{$TALSIMANNAME}{$envtype}{$envname}{'age'}  = time();
+	}
+	print "    = I = Response from Fetish $envname Stored. \n" if ($DEBUG >= 1);
+}
+
+### Simple little sub to return the avaialble environmentals currently stored by this talisman daemon. 
+sub getEnvironmentals {
+		my @available; 
+		my $key;
+	
+		foreach $key (keys $ENV{$TALSIMANNAME}) {
+			push (@available, $key);
+		}
+		return @available;
+}
+
+### Sub to craft an errror response to a client for an unexpected result of some kind. 
+sub errresponse {
+
+        my $msg = shift;
+        my $xml = XML::LibXML::Document->new('1.0', 'utf-8');
+        my $root;
+        my $msgtag;
+        my $typetag;
+
+        # Create a new XML tree and format it as an error response with the msg provided to the sub.
+        $root = $xml->createElement("$TALSIMANNAME");
+        $xml->addChild($root);
+        $typetag = $xml->createElement('msgtype');
+        $typetag->addChild($xml->createTextNode("ERROR"));
+        $root->addChild($typetag);
+        $msgtag = $xml->createElement('msg');
+        $msgtag->addChild($xml->createTextNode("$msg"));
+        $root->addChild($msgtag);
+        return $xml;
+}
+
+sub getInvocations {
+
+
+
+}
+
+### Sub to build an XML tree of the currently available environmnetals provied by this Talisman Daemon.
+sub returnEnvCapbiliy {
+	my @envavailable = @{$_[0]};
+	my $root;
+        my $key;
+        my $fetval;
+        my $fetqual;
+        my $typetag;
+        my $nametag;
+        my $envtag;
+        my $qualtag;
+	my $bestqual;
+	my $bestname;
+        my $xml = XML::LibXML::Document->new('1.0', 'utf-8');
+
+        # Create a new XML tree and build a table of all ENVs avaible and the best quaity for each. 
+        $root = $xml->createElement("$TALSIMANNAME");
+        $xml->addChild($root);
+        $typetag = $xml->createElement('msgtype');
+        $typetag->addChild($xml->createTextNode("ENVIRONMENTAL"));
+        $root->addChild($typetag);
+	# Run through our stored environemtnals and list the best quality for each proveded by this fetish.
+        for $key (@envavailable) {
+		$bestname, $bestqual = findBestEnvQual($key);
+                $envtag = $xml->createElement('environmental');
+                $root->addChild($envtag);
+                $nametag = $xml->createElement('name');
+                $envtag->addChild($nametag);
+                $nametag->addChild($xml->createTextNode("$key"));
+		$qualtag = $xml->createElement('qual');
+		$envtag->addChild($qualtag);
+		$qualtag->addChild($xml->createTextNode("$bestqual"));
+        }
+        return $xml;
+}
+
+sub returnInvCapbiliy {
+        my @envavailable = @{$_[0]};
+
+}
+
+### Sub to find and return the highest quality value for a requested Environmental.
+sub getAndReturnEnv {
+
+	my $environmental = shift;
+	my $fetish;
+	my $envvalue;
+	my $xml;
+	my $qual;
+	
+	# Find the highest quality response for this environmental and retrn it. 
+	$fetish, $qual = findBestEnvQual("$environmental");	
+	$envvalue = $ENV{$TALSIMANNAME}{$environmental}{$fetish}{'value'};
+	$xml = formEnvResponse($environmental, $envvalue);
+	return($xml);
+
+}
+
+### Sub to find and return the fetish name with the best quality for the requested  environental. 
+sub findBestEnvQual {
+
+	my $environmental = shift;
+	my $key;
+        my $qual;
+        my $highqual = -1;
+        my $highname = "";
+        my $envvalue;
+
+	# Run through each fetish that returned a environmental of this type.
+        foreach $key (keys $ENV{$TALSIMANNAME}{$environmental}) {
+		if ($ENV{$TALSIMANNAME}{$environmental}{$key}{'qual'}) {
+                	# Grab the quality for the current fetish if it's defined. 
+                	$qual = $ENV{$TALSIMANNAME}{$environmental}{$key}{'qual'};
+		} else {
+			# set the default quality of the sensor to -1. i.e undefined. 
+			$qual = -1;
+		}
+                # compare the quality to the current highest quality fetish indexed. This is -1 and none to start with.
+                if ($qual >= $highqual) {
+                        # if this fetish has a higher or equal quality than the current highest. Save it's name and 
+                        # make it the new highscore and move on. 
+                        $highname = $key;
+                        $highqual = $qual;
+                } else {
+                        # else this is not better or equal to what we already have. Move on. 
+                }
+
+        }
+	# at this point we should have a winner for the fetish with the highest quality measurement of this type. 
+	return ($highname, $highqual);
+}
+
+### Sub to build and XML tree for en environmntal query and return it. 
+sub formEnvResponse {
+	my $environmntal = shift;
+	my $envvalue = shift;
+	my $root;
+        my $typetag;
+        my $nametag;
+        my $envtag;
+        my $valtag;
+        my $xml = XML::LibXML::Document->new('1.0', 'utf-8');
+
+        # Create a new XML tree and fill it with the data from the ENV hash, then return it. 
+        $root = $xml->createElement("$TALSIMANNAME");
+        $xml->addChild($root);
+        $typetag = $xml->createElement('msgtype');
+        $typetag->addChild($xml->createTextNode("ENVIRONMENTAL"));
+        $root->addChild($typetag);
+	$envtag = $xml->createElement('environmental');
+	$root->addChild($envtag);
+	$nametag = $xml->createElement('name');
+	$envtag->addChild($nametag);
+	$nametag->addChild($xml->createTextNode("$environmntal"));
+	$valtag = $xml->createElement('value');
+	$envtag->addChild($valtag);
+	$valtag->addChild($xml->createTextNode("$envvalue"));
+        return $xml;
+
+}
 
 ### END OF LINE ###
