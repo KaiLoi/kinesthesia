@@ -17,7 +17,6 @@ use warnings;
 use Data::Dumper;
 use Socket;
 use XML::LibXML;
-use XML::Simple;
 use POE qw(
         Wheel::SocketFactory
         Wheel::ReadWrite
@@ -26,7 +25,6 @@ use POE qw(
         Filter::Stackable
         Filter::Stream
         Component::Client::TCP
-	API::Peek
 );
 
 my $TALSIMANNAME = "SETMEINCONFIG";
@@ -49,7 +47,6 @@ my $SHADOWADDR = "127.0.0.1";
 my $SHADOWPORT = 1970;
 # Create an XML parser engine for the program.
 my $parser = XML::LibXML->new();
-my $api = POE::API::Peek->new();
 # Global hash for storing the env details returned by fetish Daemons.
 my %ENV;
 # Global hash for storing conigured fetishes and their current connectivity and reporting state. 
