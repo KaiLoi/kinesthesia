@@ -41,6 +41,7 @@ my $CLIENTCRT = "/etc/kinethesia/certs/client1.crt";
 my $CLIENTKEY = "/etc/kinethesia/certs/client1.key";
 my $CACRT = "/etc/kinethesia/certs/ca.crt";
 my $CONFIGFILE = "/etc/kinethesia/talismandaemon.xml";
+my $FDCONFIGDIR = "/etc/kinethesia/plugins.d/";
 my $ALERTDAEMONADDR = "127.0.0.1";
 my $ALERTDAEMONPORT = "1975";
 my $SHADOWADDR = "127.0.0.1";
@@ -408,15 +409,15 @@ sub startFetishDaemons {
 	my @nodes;
 	my $name;
 	my $fetishname;
-	my @temp;
+#	my @temp;
 
 	print "\n = TD - I = Starting Fetish Daemons configured in $CONFIGFILE\n\n" if ($DEBUG >= 1);
 	# Find all the fetishes configured in the config and put them in an array.
 	@nodes = returnConfiguredFetishes();
 	# Run through the array and attemp to start each Fetish Daemon defiend. 
-	for $name (@nodes) {
-		@temp = split(/-/, $name);
-		$fetishname = $temp[1];
+	for $fetishname (@nodes) {
+#		@temp = split(/-/, $name);
+#		$fetishname = $temp[1];
 		print "     = TD - I = Starting Fetish Daemon $fetishname..." if ($DEBUG >= 1);
 		system("/usr/local/bin/kinesthesia/fetishdaemon.pl $fetishname 2> /dev/null &");
 		print "[OK]\n" if ($DEBUG >= 1);
@@ -577,47 +578,60 @@ sub createQuery {
 ### Sub to run through the loaded config and reurn the name of all locally configured
 ### fetishes for any sub that requires them.
 sub returnConfiguredFetishes {
-	my $node;
 	my @nodes;
-	my $nodename;
-	my $subnode;
-	my $name;
-
-	# run through the config and fill an array with nodes that match fd-*
-	for $node ($cfg->findnodes('/cfg')) {
-		for $subnode ($node->findnodes('./*')) {
-			$name = $subnode->nodeName();
-			if ($name =~ m/^fd-.+/) {
-				push(@nodes, $name);
-			}
-		}
-	}
-			
+	
+	@nodes = keys %FETISHES;
 	return(@nodes);
 }
 
 ### Sub to create the global HASH containing all the configutred fetishes and their current connecton state.
 sub loadAndStoreFetishes {
+	my $file;
 	my @nodes;
 	my $node;
 	my $name;
 	my $addr;
 	my $port;
+        my $cfgref;
+        my $xml;
 
-	# Grab conigured fetishes from config.
-	@nodes = returnConfiguredFetishes();
+
+	# Grab conigured fetishes from config plugin.d directory.
+	opendir(DIR, $FDCONFIGDIR) or die $!;
+
+	# Grab a list of all the plugins that have config files.	
+ 	while (my $file = readdir(DIR)) {
+		# We only want files
+        	next unless (-f "$FDCONFIGDIR/$file");
+		# Use a regular expression to find files ending in .txt
+        	next unless ($file =~ m/\.xml$/);
+		# split it down to just the fetish name.
+		$file = (split(/-/, $file))[1];
+		$file = (split(/\./, $file))[0];
+		
+		#create a list of all fetsihes found. 
+		push (@nodes, $file);
+    	}
+
+    	closedir(DIR);
+
 	foreach $node (@nodes) {
+
+		$cfgref = $parser->parse_file("$FDCONFIGDIR/f-$node.xml");
+        	$xml = $cfgref -> getDocumentElement();
+
 		# grab the fetishes name, port and IP and store them. 
-		$name = (split(/-/, $node))[1];
-		$addr = $cfg->findvalue("/cfg/$node/bindaddress");
-		$port = $cfg->findvalue("/cfg/$node/daemonport");
-		$FETISHES{$node}{'name'} = $name;
+		print "looking for node fd-$node\n";
+		$addr = $xml->findvalue("fd-$node/bindaddress");
+		$port = $xml->findvalue("fd-$node/daemonport");
+		$FETISHES{$node}{'name'} = $node;
 		$FETISHES{$node}{'addr'} = $addr;
 		$FETISHES{$node}{'port'} = $port;
 		# set a variable to track if the talisman daemon is currently connected to this fetish
 		# for re-starting/reconnecting later.
 		$FETISHES{$node}{'connected'} = 0;
 	}
+	print Dumper(%FETISHES);
 } 
 
 ### Sub to take the reponse from a fetish and parse it's data into the Environmental hash/DB

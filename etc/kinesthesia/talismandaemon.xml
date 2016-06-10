@@ -14,6 +14,19 @@
 	 </GlobalFetishD>
 	<GlobalInvocation>
 	</GlobalInvocation>
+
+<!-- 	<fd-dummy>
+		<environmental>
+                        <name>temp</name>
+                        <warn>40</warn>
+                        <crit></crit>
+                        <qual>8</qual>
+                </environmental>
+		<debug>1</debug>
+                <pollperiod>30</pollperiod>
+                <daemonport>2001</daemonport>
+                <bindaddress>127.0.0.1</bindaddress>
+	</fd-dummy>
 	<fd-sht15>
 		<environmental>
 			<name>temp</name>
@@ -21,13 +34,13 @@
 			<crit></crit>
 			<qual>8</qual>
 		</environmental>
-<!--                <environmental>
+                <environmental>
                         <name>wow</name>
                         <warn>10</warn>
                         <crit></crit>
                         <qual></qual>
-                </environmental> -->
-<!--		<environmental>
+                </environmental>
+		<environmental>
 			<name>humidity</name>
 			<warn>10</warn>
 			<crit>20</crit>
@@ -42,9 +55,9 @@
 		<debug>1</debug>
 		<pollperiod>30</pollperiod>
                 <daemonport>2001</daemonport>
-		<bindaddress>127.0.0.1</bindaddress> -->
+		<bindaddress>127.0.0.1</bindaddress> 
 	</fd-sht15>
-<!--	<fd-bmp085>
+	<fd-bmp085>
 		<environmental>
 			<name>pressure</name>
 		</environmental>

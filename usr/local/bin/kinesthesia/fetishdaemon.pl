@@ -48,7 +48,8 @@ my $SERVERCRT = "/etc/kinethesia/certs/server.crt";
 my $CLIENTCRT = "/etc/kinethesia/certs/client1.crt";
 my $CLIENTKEY = "/etc/kinethesia/certs/client1.key";
 my $CACRT = "/etc/kinethesia/certs/ca.crt";
-my $CONFIGFILE = "/etc/kinethesia/talismandaemon.xml";
+my $TDCONFIGFILE = "/etc/kinethesia/talismandaemon.xml";
+my $FDCONFIGFILE = "/etc/kinethesia/plugins.d/f-$FETISH.xml";
 my $ALERTDAEMONADDR = "127.0.0.1";
 my $ALERTDAEMONPORT = "1975";
 # Create an XML parser engine for the program.
@@ -58,13 +59,12 @@ my %ENV;
 
 # Start the Daemon and load in the config file.
 print "\n*** Starting Fetish Daemon for fetish $FETISH ***\n\n" if ($DEBUG >= 1);
-print "  = FD $FETISH - I = Reading in config file: $CONFIGFILE\n" if ($DEBUG >= 1);
 my $cfg = loadAndParseConfig();
-print "\n  = FD $FETISH - I = Config file read\n" if ($DEBUG >= 1);
+print "\n  = FD $FETISH - I = Config files read\n" if ($DEBUG >= 1);
 
 # Check if the conig file has a section for the fetish called. 
 if (!$cfg->findnodes("fd-$FETISH")) {
-	print "\n  = FD $FETISH - C = No config found in $CONFIGFILE for fetish: $FETISH. Exiting.\n\n";
+	print "\n  = FD $FETISH - C = No config found in for fetish: $FETISH. Exiting.\n\n";
 	exit(0);
 }
 
@@ -269,8 +269,38 @@ $poe_kernel->run();
 ### values that override defaults and populated them in order of preference: Default->Global->Specific.
 sub loadAndParseConfig {
 
-        my $cfgref = $parser->parse_file($CONFIGFILE);
-        my $xml = $cfgref -> getDocumentElement();
+	my @files;
+	my $file;
+	my @wanted;
+	my $xml;
+	my $cfgref;
+	my $dom;
+	my $root;
+	
+	# Load in the config that applies to all fetishes from the Talisman Daemon config file. 
+	print "  = FD $FETISH - I = Reading in Global and Fetish config files\n" if ($DEBUG >= 1);
+
+	# go through target files, collecting elements of interest
+	@files = ($TDCONFIGFILE, $FDCONFIGFILE);
+
+	foreach $file ( @files ) {
+    		# parse XML
+    		$dom = $parser->parse_file( $file ); # input
+
+    		# select and store all top level elements
+   		push @wanted, $dom->documentElement->findnodes( './*' ); 
+	}
+	# make a new document
+	$cfgref = XML::LibXML::Document->new( '1.0', 'UTF-8' );
+
+	# add root element
+	$root = XML::LibXML::Element->new( 'cfg' );
+	$cfgref->addChild( $root );
+	
+	# add the inner elements we've collected
+	$root->addChild( $_ ) for @wanted;
+	
+	$xml = $cfgref -> getDocumentElement();
 
 	if ($xml->findvalue("fd-$FETISH/debug")) {
 	        $DEBUG = $xml->findvalue("fd-$FETISH/debug");
