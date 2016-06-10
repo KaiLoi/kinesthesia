@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<cfg>
+	<fd-dummy2>
+		<environmental>
+			<name>pressure</name>
+            		<warn></warn>
+            		<crit></crit>
+            		<qual>8</qual>
+     		</environmental>
+     		<debug>1</debug>
+     		<pollperiod>30</pollperiod>
+     		<daemonport>2002</daemonport>
+     		<bindaddress>127.0.0.1</bindaddress>
+	</fd-dummy2>
+</cfg>
