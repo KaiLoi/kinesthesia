@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <cfg>
 	<TDConfig>
+		<name>dev</name>
 		<bindaddress>"127.0.0.1"</bindaddress>
 		<port>1999</port>
 		<keepalive>10</keepalive>
@@ -26,7 +27,7 @@
                         <crit></crit>
                         <qual></qual>
                 </environmental> -->
-		<environmental>
+<!--		<environmental>
 			<name>humidity</name>
 			<warn>10</warn>
 			<crit>20</crit>
@@ -41,9 +42,9 @@
 		<debug>1</debug>
 		<pollperiod>30</pollperiod>
                 <daemonport>2001</daemonport>
-		<bindaddress>127.0.0.1</bindaddress>
+		<bindaddress>127.0.0.1</bindaddress> -->
 	</fd-sht15>
-	<fd-bmp085>
+<!--	<fd-bmp085>
 		<environmental>
 			<name>pressure</name>
 		</environmental>
@@ -81,6 +82,6 @@
                 <pollperiod>30</pollperiod>
                 <daemonport>2004</daemonport>
                 <bindaddress>127.0.0.1</bindaddress>
-	</fd-tsl2561>
+	</fd-tsl2561> -->
 </cfg>
 

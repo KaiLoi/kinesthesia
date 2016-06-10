@@ -58,7 +58,7 @@ print "= I = Reading in config file: $CONFIGFILE\n";
 my $cfg = loadAndParseConfig();
 # parse the fetish config out of the CFG tree and store it in it's own variable for tracking and state.
 loadAndStoreFetishes();
-print "\n= I = Config file read\n";
+print "\n= I = Config files read\n";
 
 # Set to run as a Daemon or not for debug. 
 if ($DAEMON) {
@@ -70,7 +70,7 @@ if ($DAEMON) {
 $| = 1;
 
 # First thing to do is start all it's configured Fetish Daemons. 
-#startFetishDaemons()
+startFetishDaemons();
 
 # Then lets start our configured peristent connections for communication to each.
 initialConnectToFetishDaemons();
@@ -418,7 +418,7 @@ sub startFetishDaemons {
 		@temp = split(/-/, $name);
 		$fetishname = $temp[1];
 		print "    = I = Starting Fetish Daemon $fetishname..." if ($DEBUG >= 1);
-		system("/usr/local/bin/fetishdaemon.pl $fetishname 2> /dev/null");
+		system("/usr/local/bin/kinesthesia/fetishdaemon.pl $fetishname 2> /dev/null &");
 		print "[OK]\n" if ($DEBUG >= 1);
 	}
 	print "\n= I = All configured Fetish Daemons Started\n" if ($DEBUG >= 1);
