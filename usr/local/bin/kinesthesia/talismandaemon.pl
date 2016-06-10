@@ -54,11 +54,11 @@ my %FETISHES;
 
 # Start the Daemon and load in the config file.
 print "\n*** Starting Kinethesia Talisman Daemon ***\n\n";
-print "= I = Reading in config file: $CONFIGFILE\n";
+print "= TD - I = Reading in config file: $CONFIGFILE\n";
 my $cfg = loadAndParseConfig();
 # parse the fetish config out of the CFG tree and store it in it's own variable for tracking and state.
 loadAndStoreFetishes();
-print "\n= I = Config files read\n";
+print "\n= TD - I = Config files read\n";
 
 # Set to run as a Daemon or not for debug. 
 if ($DAEMON) {
@@ -104,18 +104,18 @@ POE::Session->create(
 			my $addr;
 			my $port; 
 
-                        print "\n= I = Checking that all Fetishes are connected and running.\n" if ($DEBUG >= 1);
+                        print "\n= TD - I = Checking that all Fetishes are connected and running.\n" if ($DEBUG >= 1);
 			foreach $key (keys %FETISHES) {
 				if (!$FETISHES{$key}{'connected'}) {
 					$name = $FETISHES{$key}{'name'};
 			                $addr = $FETISHES{$key}{'addr'};
                 			$port = $FETISHES{$key}{'port'};
-                			print "    = I = Attempting reconnect to disconected Fetish Daemon for $name on $addr:$port\n" if ($DEBUG >= 1);
+                			print "    = TD - I = Attempting reconnect to disconected Fetish Daemon for $name on $addr:$port\n" if ($DEBUG >= 1);
                 			connectFetishDaemon($name, $addr, $port);
 
 				}
 			}
-			print "= I = Finished Checking all fetishes.\n"  if ($DEBUG >= 1);
+			print "= TD - I = Finished Checking all fetishes.\n"  if ($DEBUG >= 1);
                         $_[HEAP]->{next_alarm_time} = $_[HEAP]->{next_alarm_time} + $KEEPALIVE;
                         $_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
                 },
@@ -144,17 +144,17 @@ POE::Session->create(
 			my $age;
 			my $size;
 	
-                        print "\n= I = Cleaning up Environmental DB\n" if ($DEBUG >= 1);
+                        print "\n= TD - I = Cleaning up Environmental DB\n" if ($DEBUG >= 1);
 			# Run through the ENV hash and check each environmntal and subsequent fetish for the age of the last reported data. 
 			foreach $envkey (keys $ENV{$TALSIMANNAME}) {
 				foreach $fetkey (keys $ENV{$TALSIMANNAME}{$envkey}) {
 					$age = $now - $ENV{$TALSIMANNAME}{$envkey}{$fetkey}{'age'};
 					# If the stored fetish value is older than 5 min it's getting stale, lets clean it out until it reports again.
 					if ($age > 30) {
-						print "    = I = Cleaning out old Environmental $envkey for fetish $fetkey\n" if ($DEBUG >= 1);
+						print "    = TD - I = Cleaning out old Environmental $envkey for fetish $fetkey\n" if ($DEBUG >= 1);
 						delete $ENV{$TALSIMANNAME}{$envkey}{$fetkey};
 					} else { 
-						print "    = I = Leaving Environmental $envkey for fetish $fetkey alone as it is still current\n"  if ($DEBUG >= 1);
+						print "    = TD - I = Leaving Environmental $envkey for fetish $fetkey alone as it is still current\n"  if ($DEBUG >= 1);
 					}
 				}
 				# lets make sure that there are still some reporting fetishes for this environmental. 
@@ -164,13 +164,13 @@ POE::Session->create(
 				} else {
 					# We've Deleted all reporting fetishes for this Environmental. Delete it from our DB so it's not reported in our capabilities and 
 					# update any subscribed shadow with the info. 
-					print "        = I = We've Deleted all reporting fetishes for this Environmental. Deleting environmental from our DB.\n" if ($DEBUG >= 1);
+					print "        = TD - I = We've Deleted all reporting fetishes for this Environmental. Deleting environmental from our DB.\n" if ($DEBUG >= 1);
 					delete $ENV{$TALSIMANNAME}{$envkey};
 					#FIXME!
 					# notifyShadowOfCapabilityChange($envkey);
 				}
 			}
-                        print "= I = Finished cleaning up Environmental DB. Sleeping for $ENVCLEANPERIOD seconds.\n\n" if ($DEBUG >= 1);
+                        print "= TD - I = Finished cleaning up Environmental DB. Sleeping for $ENVCLEANPERIOD seconds.\n\n" if ($DEBUG >= 1);
                         $_[HEAP]->{next_alarm_time} = $_[HEAP]->{next_alarm_time} + $ENVCLEANPERIOD;
                         $_[KERNEL]->alarm(tick => $_[HEAP]->{next_alarm_time});
                 },
@@ -182,7 +182,7 @@ sub parent_start {
         my $heap = $_[HEAP];
 
 	$_[KERNEL]->alias_set('TalismanListener');
-        print "\n= I = Starting POE session and initialising socket\n" if ($DEBUG == 1);
+        print "\n= TD - I = Starting POE session and initialising socket\n" if ($DEBUG == 1);
         $heap->{listener} = POE::Wheel::SocketFactory->new(
                 BindAddress  => $BINDADDRESS,
                 BindPort     => $DAEMONPORT,
@@ -190,7 +190,7 @@ sub parent_start {
                 SuccessEvent => 'socket_birth',
                 FailureEvent => 'socket_death',
         );
-        print "= I = Socket initialised on $BINDADDRESS:$DAEMONPORT Waiting for connections\n" if ($DEBUG == 1);
+        print "= TD - I = Socket initialised on $BINDADDRESS:$DAEMONPORT Waiting for connections\n" if ($DEBUG == 1);
 }
 
 ### Sub to clean up if we shut down the server
@@ -198,7 +198,7 @@ sub parent_stop {
         my $heap = $_[HEAP];
         delete $heap->{listener};
         delete $heap->{session};
-        print "= I = Listener Death!\n" if ($DEBUG == 1);
+        print "= TD - I = Listener Death!\n" if ($DEBUG == 1);
 }
 
 
@@ -207,7 +207,7 @@ sub socket_birth {
         my ($socket, $address, $port) = @_[ARG0, ARG1, ARG2];
 
         $address = inet_ntoa($address);
-        print "\n= S = Socket birth client connecting\n" if ($DEBUG == 1);
+        print "\n= TD - S = Socket birth client connecting\n" if ($DEBUG == 1);
         # Create a POE session to deal with input/output on this socket. 
         POE::Session->create(
                 inline_states => {
@@ -225,7 +225,7 @@ sub socket_birth {
 sub socket_death {
         my $heap = $_[HEAP];
         if ($heap->{socket_wheel}) {
-                print "= S = Socket death, client disconnected\n" if ($DEBUG == 1);
+                print "= TD - S = Socket death, client disconnected\n" if ($DEBUG == 1);
                 delete $heap->{socket_wheel};
         }
 }
@@ -235,8 +235,8 @@ sub socket_success {
         my ($heap, $kernel, $connected_socket, $address, $port) = @_[HEAP, KERNEL, ARG0, ARG1, ARG2];
 
 	$_[KERNEL]->alias_set('SSLSession');
-        print "= I = CONNECTION from $address : $port \n" if ($DEBUG == 1);
-        print "= SSL = Creating SSL Object\n" if ($DEBUG == 1);
+        print "= TD - I = CONNECTION from $address : $port \n" if ($DEBUG == 1);
+        print "= TD - SSL = Creating SSL Object\n" if ($DEBUG == 1);
         $heap->{sslfilter} = POE::Filter::SSL->new(
                 crt    => $SERVERCRT,
                 key    => $SERVERKEY,
@@ -255,7 +255,7 @@ sub socket_success {
                 InputEvent => 'socket_input',
                 ErrorEvent => 'socket_death',
         );
-        print "= SSL = SSL Socket Created\n" if ($DEBUG == 1);
+        print "= TD - SSL = SSL Socket Created\n" if ($DEBUG == 1);
 }
 
 ### Sub to process input to the listening Talisman daemon from the Shadow or other client. 
@@ -275,15 +275,15 @@ sub socket_input {
 	my @envavailable;
 	my @invavailable;
 
-	print "= I = Client command received " if ($DEBUG >= 1);
+	print "= TD - I = Client command received " if ($DEBUG >= 1);
         if ($DEBUG >= 2 ) {
                 print ": \n\n$buf\n" if ($DEBUG >= 2);
         } elsif ($DEBUG >= 1) {
                 print "\n";
         }
-        print "= SSL = Authing Client Packet\n" if ($DEBUG >= 1);
+        print "= TD - SSL = Authing Client Packet\n" if ($DEBUG >= 1);
         if ($heap->{sslfilter}->clientCertValid()) {
-                print "= SSL = Client packet authenticated!\n" if ($DEBUG >= 1);
+                print "= TD - SSL = Client packet authenticated!\n" if ($DEBUG >= 1);
                 # Take the XML received and create an new XML object from it. 
                 $xml = XML::LibXML->load_xml(string => $buf);
                 $root = $xml->documentElement();
@@ -323,9 +323,9 @@ sub socket_input {
 		# The Client Certificate failed authentication. Be nice and tell them so then kick them off the server. 
 		# might change this in the future to a clean disconnect with no response. At the momnt it's useful for
 		# debugging.
-                print "= SSL = Client Certificate Invalid! Rejecting command and disconnecting!\n" if ($DEBUG == 1);
+                print "= TD - SSL = Client Certificate Invalid! Rejecting command and disconnecting!\n" if ($DEBUG == 1);
                 $response = errresponse("INVALID CERT! Connection rejected!");
-                print "= I = Sending Client Result:\n$response\n" if ($DEBUG == 1);
+                print "= TD - I = Sending Client Result:\n$response\n" if ($DEBUG == 1);
                 $heap->{socket_wheel}->put($response);
                 $kernel->delay(socket_death => 1);
         }
@@ -345,58 +345,58 @@ sub loadAndParseConfig {
 
 	if ($xml->findvalue("TDConfig/name")) {
 		$TALSIMANNAME = $xml->findvalue("TDConfig/name");
-		print "\n    = I = Loading Talsiman Name from config file: $TALSIMANNAME\n" if ($DEBUG >= 1);
+		print "\n    = TD - I = Loading Talsiman Name from config file: $TALSIMANNAME\n" if ($DEBUG >= 1);
 	} else { 
-		print "\n    = C = Name not defined in config. This MUST be set! Exiting\n";
+		print "\n    = TD - C = Name not defined in config. This MUST be set! Exiting\n";
 		die;
 	}
         if ($xml->findvalue("TDConfig/debug")) {
                 $DEBUG = $xml->findvalue("TDConfig/debug");
-                print "    = I = Loading Debug Setting from config file: $DEBUG\n" if ($DEBUG >= 1);
+                print "    = TD - I = Loading Debug Setting from config file: $DEBUG\n" if ($DEBUG >= 1);
         }
         if ($xml->findvalue("TDConfig/bindaddress")) {
                 $BINDADDRESS = $xml->findvalue("TDConfig/bindaddress");
-                print "    = I = Loading bind address from config file: $BINDADDRESS\n" if ($DEBUG >= 1);
+                print "    = TD - I = Loading bind address from config file: $BINDADDRESS\n" if ($DEBUG >= 1);
         }
 	if ($xml->findvalue("TDConfig/port")) {
                 $DAEMONPORT = $xml->findvalue("TDConfig/port");
-                print "    = I = Loading daemon port from config file: $DAEMONPORT\n" if ($DEBUG >= 1);
+                print "    = TD - I = Loading daemon port from config file: $DAEMONPORT\n" if ($DEBUG >= 1);
         }
 	if ($xml->findvalue("TDConfig/alertdaemon")) {
                 $ALERTDAEMONADDR = $xml->findvalue("TDConfig/alertdaemon");
-                print "    = I = Loading Alert Daemon address from config file: $ALERTDAEMONADDR\n" if ($DEBUG >= 1);
+                print "     = TD - I = Loading Alert Daemon address from config file: $ALERTDAEMONADDR\n" if ($DEBUG >= 1);
         }
 	if ($xml->findvalue("TDConfig/alertdaemonport")) {
                 $ALERTDAEMONPORT = $xml->findvalue("TDConfig/alertdaemonport");
-                print "    = I = Loading Alert Daemon port from config file: $ALERTDAEMONPORT\n" if ($DEBUG >= 1);
+                print "     = TD - I = Loading Alert Daemon port from config file: $ALERTDAEMONPORT\n" if ($DEBUG >= 1);
         }
 	if ($xml->findvalue("TDConfig/shadow")) {
                 $SHADOWADDR = $xml->findvalue("TDConfig/shadow");
-                print "    = I = Loading Shadow address from config file: $SHADOWADDR\n" if ($DEBUG >= 1);
+                print "     = TD - I = Loading Shadow address from config file: $SHADOWADDR\n" if ($DEBUG >= 1);
         }
 	if ($xml->findvalue("TDConfig/shadowport")) {
                 $SHADOWPORT = $xml->findvalue("TDConfig/shadowport");
-                print "    = I = Loading Shadow port from config file: $SHADOWPORT\n" if ($DEBUG >= 1);
+                print "     = TD - I = Loading Shadow port from config file: $SHADOWPORT\n" if ($DEBUG >= 1);
         }
         if ($xml->findvalue("TDConfig/serverkey")) {
                 $SERVERKEY = $xml->findvalue("TDConfig/serverkey");
-                print "    = I = Loading Server Key from config file: $SERVERKEY\n" if ($DEBUG >= 1);
+                print "     = TD - I = Loading Server Key from config file: $SERVERKEY\n" if ($DEBUG >= 1);
         }
         if ($xml->findvalue("TDConfig/servercrt")) {
                 $SERVERCRT = $xml->findvalue("TDConfig/servercrt");
-                print "    = I = Loading Server Certificate from config file: $SERVERCRT\n" if ($DEBUG >= 1);
+                print "     = TD - I = Loading Server Certificate from config file: $SERVERCRT\n" if ($DEBUG >= 1);
         }
         if ($xml->findvalue("TDConfig/cacrt")) {
                 $CACRT = $xml->findvalue("TDConfig/cacrt");
-                print "    = I = Loading CA Certificate from config file: $CACRT\n" if ($DEBUG >= 1);
+                print "     = TD - I = Loading CA Certificate from config file: $CACRT\n" if ($DEBUG >= 1);
         }
         if ($xml->findvalue("TDConfig/clientkey")) {
                 $CLIENTKEY = $xml->findvalue("TDConfig/clientkey");
-                print "    = I = Loading Client Key from config file: $CLIENTKEY\n" if ($DEBUG >= 1);
+                print "     = TD - I = Loading Client Key from config file: $CLIENTKEY\n" if ($DEBUG >= 1);
         }
         if ($xml->findvalue("TDConfig/clientcrt")) {
                 $CACRT = $xml->findvalue("TDConfig/clientcrt");
-                print "    = I = Loading Client Certificate from config file: $CLIENTCRT\n" if ($DEBUG >= 1);
+                print "     = TD - I = Loading Client Certificate from config file: $CLIENTCRT\n" if ($DEBUG >= 1);
         }
         return $xml;
 
@@ -410,18 +410,18 @@ sub startFetishDaemons {
 	my $fetishname;
 	my @temp;
 
-	print "\n= I = Starting Fetish Daemons configured in $CONFIGFILE\n\n" if ($DEBUG >= 1);
+	print "\n = TD - I = Starting Fetish Daemons configured in $CONFIGFILE\n\n" if ($DEBUG >= 1);
 	# Find all the fetishes configured in the config and put them in an array.
 	@nodes = returnConfiguredFetishes();
 	# Run through the array and attemp to start each Fetish Daemon defiend. 
 	for $name (@nodes) {
 		@temp = split(/-/, $name);
 		$fetishname = $temp[1];
-		print "    = I = Starting Fetish Daemon $fetishname..." if ($DEBUG >= 1);
+		print "     = TD - I = Starting Fetish Daemon $fetishname..." if ($DEBUG >= 1);
 		system("/usr/local/bin/kinesthesia/fetishdaemon.pl $fetishname 2> /dev/null &");
 		print "[OK]\n" if ($DEBUG >= 1);
 	}
-	print "\n= I = All configured Fetish Daemons Started\n" if ($DEBUG >= 1);
+	print "\n = TD - I = All configured Fetish Daemons Started\n" if ($DEBUG >= 1);
 }
 
 
@@ -437,7 +437,7 @@ sub initialConnectToFetishDaemons {
 	my $command;
 	my %query;
 
-	print "\n= I = Connecting to all Configured Fetish Daemons and initating automated querying.\n\n" if ($DEBUG >= 1);
+	print "\n = TD - I = Connecting to all Configured Fetish Daemons and initating automated querying.\n\n" if ($DEBUG >= 1);
 	# Get the list of expected fetishes.
 	@nodes = returnConfiguredFetishes();
 	# Run throguh them and spin off a persistent client connection to each.
@@ -445,15 +445,15 @@ sub initialConnectToFetishDaemons {
 		$name = $FETISHES{$node}{'name'};
 		$addr = $FETISHES{$node}{'addr'};
 		$port = $FETISHES{$node}{'port'};
-		print "    = I = Connecting to Fetish Daemon for $name on $addr:$port\n" if ($DEBUG >= 1);
+		print "     = TD - I = Connecting to Fetish Daemon for $name on $addr:$port\n" if ($DEBUG >= 1);
 		if (connectFetishDaemon($name, $addr, $port)) {
 			# if we sucessfully connect to the FD proceed;
 		} else { 
-			print "    = C = Failed to connect to Fetish Daemon $name\n" if ($DEBUG >= 1);
+			print "     = TD - C = Failed to connect to Fetish Daemon $name\n" if ($DEBUG >= 1);
 		}
 		
 	}
-	print "\n= I = Finished Connecting to all Daemons and initiated querying\n"  if ($DEBUG >= 1);
+	print "\n = TD - I = Finished Connecting to all Daemons and initiated querying\n"  if ($DEBUG >= 1);
 }
 
 ### Sub to initiate or reconnect to a fetish daemon.
@@ -474,7 +474,7 @@ sub connectFetishDaemon {
 			# set the connected flag for this fetish daemon so we know we're currently connected and exchanging data.
 			# used to reconnect if connection is lost. 
 			$FETISHES{"fd-$name"}{'connected'} = 1;
-			print "    = I = Sucessfully connected to $name\n" if ($DEBUG >= 1);
+			print "     = TD - I = Sucessfully connected to $name\n" if ($DEBUG >= 1);
 			# set up a polling alarm and kick one off right away. 
 			$_[HEAP]->{$name}->{next_alarm_time} = int(time());   # Immediately trigger an alarm
 			$_[KERNEL]->alarm(tick => $_[HEAP]->{$name}->{next_alarm_time});
@@ -489,12 +489,12 @@ sub connectFetishDaemon {
                         delete $_[HEAP]->{$name};
                         $_[KERNEL]->yield('shutdown');
                         $_[KERNEL]->call('shutdown');			
-			print "    = W = Connection refused, waiting $KEEPALIVE seconds and trying again\n" if ($DEBUG >= 1);
+			print "     = TD - W = Connection refused, waiting $KEEPALIVE seconds and trying again\n" if ($DEBUG >= 1);
 		}, 
 		# received input back from the server and move on. 
 		ServerInput   => sub {
 			$xml = XML::LibXML->load_xml(string => $_[ARG0]);
-			print "= I = Response received from Server\n"  if ($DEBUG >= 2);
+			print " = TD - I = Response received from Server\n"  if ($DEBUG >= 2);
 			print "\n" . $xml->toString(1) . "\n\n" if ($DEBUG >= 2);
 			processFetishResponse($name, $xml);
 		},
@@ -502,7 +502,7 @@ sub connectFetishDaemon {
 		InlineStates => {
 			tick => sub {
 					my $xml;
-					print "= I = Sending query to $name for environmentals\n" if ($DEBUG >= 1);
+					print " = TD - I = Sending query to $name for environmentals\n" if ($DEBUG >= 1);
 					$xml = createQuery("all", 0);
 					print "\n" . $xml->toString(1) . "\n\n" if ($DEBUG >= 2);
 					# make sure we're connected to the remote end. Some states leave this sub running or a sudden drop right 
@@ -510,7 +510,7 @@ sub connectFetishDaemon {
 					if ($_[HEAP]{connected}) {
 						$_[HEAP]{server}->put($xml);
 					} else { 
-						print "= W = Not currently connected to $name, waiting for reconnect\n" if ($DEBUG >= 1);
+						print " = TD - W = Not currently connected to $name, waiting for reconnect\n" if ($DEBUG >= 1);
 					}
 					# reset the timer and go round the wheel again
 					$_[HEAP]->{$name}->{next_alarm_time}+=$POLLPERIOD;
@@ -521,7 +521,7 @@ sub connectFetishDaemon {
 		Disconnected => sub {
 			my $key;
 
-			print "= W = Lost connection to $name, marking disconnected for retry.\n" if ($DEBUG >= 1);
+			print " = TD - W = Lost connection to $name, marking disconnected for retry.\n" if ($DEBUG >= 1);
 			# set the connected flag to 0 so the fetish monitor knows to attempt restart/reconnect. We aren't usingthe in-built POE 
 			# reconnect function becuase it only tries once after delay time and gives up. Not good. 
 			$FETISHES{"fd-$name"}{'connected'} = 0;
@@ -630,12 +630,12 @@ sub processFetishResponse {
 
 	# initially we'll store this data in a memory hash. But this can easily be replaced
 	# by some kind of SQL DB or any other storage method. 
-	print "    = I = Storing response from Fetish $envname in memory DB\n" if ($DEBUG >= 1);
+	print "     = TD - I = Storing response from Fetish $envname in memory DB\n" if ($DEBUG >= 1);
 	# Find out what fetish this response is from.
         $root = $xml->documentElement();
         $alerter = $root->nodeName();
 	if ($alerter ne $envname) {
-		print "    = C = Somehow we got here with a packet not from the daemon we expected! Could be a security issue or a broken fetish daemon!\n" if ($DEBUG >= 1);
+		print "     = TD - C = Somehow we got here with a packet not from the daemon we expected! Could be a security issue or a broken fetish daemon!\n" if ($DEBUG >= 1);
 		return(0);
 	}
 	# run through the returned values in this packet and add them to the environmental hash. We're going to change the logic
@@ -652,7 +652,7 @@ sub processFetishResponse {
 		# really old. Also for cleaning the ENV hash.
 		$ENV{$TALSIMANNAME}{$envtype}{$envname}{'age'}  = time();
 	}
-	print "    = I = Response from Fetish $envname Stored. \n" if ($DEBUG >= 1);
+	print "     = TD - I = Response from Fetish $envname Stored. \n" if ($DEBUG >= 1);
 }
 
 ### Simple little sub to return the avaialble environmentals currently stored by this talisman daemon. 
