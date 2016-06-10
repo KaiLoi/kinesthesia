@@ -280,9 +280,10 @@ sub loadAndParseConfig {
 	# Load in the config that applies to all fetishes from the Talisman Daemon config file. 
 	print "  = FD $FETISH - I = Reading in Global and Fetish config files\n" if ($DEBUG >= 1);
 
-	# go through target files, collecting elements of interest
+	# go through target files, collecting elements of interest so we can merge them into one element for ease of parsing. 
 	@files = ($TDCONFIGFILE, $FDCONFIGFILE);
 
+	#for each file parse the XML and mash it into a big list.
 	foreach $file ( @files ) {
     		# parse XML
     		$dom = $parser->parse_file( $file ); # input
@@ -300,6 +301,7 @@ sub loadAndParseConfig {
 	# add the inner elements we've collected
 	$root->addChild( $_ ) for @wanted;
 	
+	# get us at the top level to begin parsing. 
 	$xml = $cfgref -> getDocumentElement();
 
 	if ($xml->findvalue("fd-$FETISH/debug")) {
