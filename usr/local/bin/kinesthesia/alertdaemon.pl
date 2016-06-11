@@ -29,12 +29,12 @@ my $DAEMON = 0;
 my $DEBUG = 1;
 my $DAEMONPORT = 1975;
 my $BINDADDRESS = "127.0.0.1";
-my $SERVERKEY = "/etc/kinethesia/certs/server.key";
-my $SERVERCRT = "/etc/kinethesia/certs/server.crt";
-my $CACRT = "/etc/kinethesia/certs/ca.crt";
-my $CLIENTCRT = "/etc/kinethesia/certs/client1.crt";
-my $CLIENTKEY = "/etc/kinethesia/certs/client1.key";
-my $CONFIGFILE = "/etc/kinethesia/alertdaemon.xml";
+my $SERVERKEY = "/etc/kinesthesia/certs/server.key";
+my $SERVERCRT = "/etc/kinesthesia/certs/server.crt";
+my $CACRT = "/etc/kinesthesia/certs/ca.crt";
+my $CLIENTCRT = "/etc/kinesthesia/certs/client1.crt";
+my $CLIENTKEY = "/etc/kinesthesia/certs/client1.key";
+my $CONFIGFILE = "/etc/kinesthesia/alertdaemon.xml";
 # create an XML parser engine for the program.
 my $parser = XML::LibXML->new();
 
