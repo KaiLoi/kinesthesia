@@ -43,6 +43,8 @@ my $DEBUG = 1;
 my $DAEMONPORT = 2001;
 my $BINDADDRESS = "127.0.0.1";
 my $POLLPERIOD = 30;
+my $FETISHSCRIPT = "";
+my $PROGRAMDIR = "/usr/local/bin/kinesthesia/";
 my $SERVERKEY = "/etc/kinesthesia/certs/server.key";
 my $SERVERCRT = "/etc/kinesthesia/certs/server.crt";
 my $CLIENTCRT = "/etc/kinesthesia/certs/client1.crt";
@@ -62,11 +64,15 @@ print "\n*** Starting Fetish Daemon for fetish $FETISH ***\n\n" if ($DEBUG >= 1)
 my $cfg = loadAndParseConfig();
 print "\n  = FD $FETISH - I = Config files read\n" if ($DEBUG >= 1);
 
-# Check if the conig file has a section for the fetish called. 
+# Check if the config file has a section for the fetish called. 
 if (!$cfg->findnodes("fd-$FETISH")) {
 	print "\n  = FD $FETISH - C = No config found in for fetish: $FETISH. Exiting.\n\n";
 	exit(0);
 }
+
+# Now lets find an executalbe to ping for the values for this fetish
+
+$FETISHSCRIPT = findFetishScript();
 
 # Set to run as a Daemon or not for debug. 
 if ($DAEMON) {
@@ -445,6 +451,7 @@ sub pollfetish {
 	my $fetishresponse;
 	my @environmentals;
 	my %fetishvalues;
+	my $fetishscript;
 
 	#create an array containing the expected environmntal rsponses from the config file. 
 	foreach ($cfg->findnodes("fd-$FETISH/environmental")) {
@@ -454,7 +461,7 @@ sub pollfetish {
 		}
 	}
 	# query the fetish and get the values it responds with.
-	$fetishresponse = `/usr/local/bin/kinesthesia/plugins/f-$FETISH.pl`;
+	$fetishresponse = `$PROGRAMDIR/plugins/$FETISHSCRIPT`;
 	chomp($fetishresponse);
 	# if there was no response from the fetish, clear the values for reply and move on. 
 	if (!$fetishresponse) {
@@ -475,6 +482,31 @@ sub pollfetish {
 	raiseAlerts(\@environmentals);
 	return(1);
 }
+
+# Sub to find the name of the fetish script for execution. Because of the generic nature of the system it could a .py, .pl. .sh or any number of things. 
+# We rely on the first part of the filename being of a convention f-<NAME>.<SOMETHING>
+sub findFetishScript {
+	my @files;
+	my $dir;
+
+
+	print "  = FD dummy - I = Looking for an executable to match this fetish name\n" if ($DEBUG == 1);
+	opendir $dir, "$PROGRAMDIR/plugins/" or die "  = FD dummy - C = Cannot open plugin directory: $!";
+	@files = readdir $dir;
+	closedir $dir;
+
+	foreach (@files) {
+		if ($_ =~ m/f-$FETISH.\w/) {
+			print "  = FD dummy - I = Found executable fetish file $_\n";
+			return "$_\n";
+		}
+			
+	}
+	print "  = FD dummy - C = Could not find an execuable fetish script for this fetish. Exiting!\n";
+	die;
+	
+}
+
 
 ### Sub to take expected responses, look at the configured responses and raise any alerts that are configured against this environmental variable.
 sub raiseAlerts {

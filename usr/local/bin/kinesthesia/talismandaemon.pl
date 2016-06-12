@@ -35,6 +35,7 @@ my $BINDADDRESS = "127.0.0.1";
 my $POLLPERIOD = 30; # How often to poll all the fetish Daemons or their values to store.
 my $KEEPALIVE = 10; # How often to end a kepalive to each fetishdaemon to make sure they are working.
 my $ENVCLEANPERIOD = 30; # How often to clean out stale environmentals from the ENV hash. 
+my $PROGRAMDIR = "/usr/local/bin/kinesthiesia/";
 my $SERVERKEY = "/etc/kinesthesia/certs/server.key";
 my $SERVERCRT = "/etc/kinesthesia/certs/server.crt";
 my $CLIENTCRT = "/etc/kinesthesia/certs/client1.crt";
@@ -419,7 +420,7 @@ sub startFetishDaemons {
 #		@temp = split(/-/, $name);
 #		$fetishname = $temp[1];
 		print "     = TD - I = Starting Fetish Daemon $fetishname..." if ($DEBUG >= 1);
-		system("/usr/local/bin/kinesthesia/fetishdaemon.pl $fetishname 2> /dev/null &");
+		system("$PROGRAMDIR/fetishdaemon.pl $fetishname 2> /dev/null &");
 		print "[OK]\n" if ($DEBUG >= 1);
 	}
 	print "\n = TD - I = All configured Fetish Daemons Started\n" if ($DEBUG >= 1);
