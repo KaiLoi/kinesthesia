@@ -1,3 +1,3 @@
 #!/usr/bin/perl
 
-print "temp:34";
+print "pressure:123456";

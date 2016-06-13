@@ -8,9 +8,9 @@
 	</TDConfig>
 	<GlobalFetishD>
                 <bindaddress>127.0.0.1</bindaddress>
-		<serverkey>/etc/kinethesia/certs/server.key</serverkey>
-		<servercrt>/etc/kinethesia/certs/server.crt</servercrt>
-		<cacrt>/etc/kinethesia/certs/ca.crt</cacrt>
+		<serverkey>/etc/kinesthesia/certs/server.key</serverkey>
+		<servercrt>/etc/kinesthesia/certs/server.crt</servercrt>
+		<cacrt>/etc/kinesthesia/certs/ca.crt</cacrt>
 	 </GlobalFetishD>
 	<GlobalInvocation>
 	</GlobalInvocation>

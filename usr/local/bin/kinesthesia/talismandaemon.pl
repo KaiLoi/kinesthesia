@@ -35,7 +35,7 @@ my $BINDADDRESS = "127.0.0.1";
 my $POLLPERIOD = 30; # How often to poll all the fetish Daemons or their values to store.
 my $KEEPALIVE = 10; # How often to end a kepalive to each fetishdaemon to make sure they are working.
 my $ENVCLEANPERIOD = 30; # How often to clean out stale environmentals from the ENV hash. 
-my $PROGRAMDIR = "/usr/local/bin/kinesthiesia/";
+my $PROGRAMDIR = "/usr/local/bin/kinesthesia/";
 my $SERVERKEY = "/etc/kinesthesia/certs/server.key";
 my $SERVERCRT = "/etc/kinesthesia/certs/server.crt";
 my $CLIENTCRT = "/etc/kinesthesia/certs/client1.crt";
@@ -410,15 +410,12 @@ sub startFetishDaemons {
 	my @nodes;
 	my $name;
 	my $fetishname;
-#	my @temp;
 
 	print "\n = TD - I = Starting Fetish Daemons configured in $CONFIGFILE\n\n" if ($DEBUG >= 1);
 	# Find all the fetishes configured in the config and put them in an array.
 	@nodes = returnConfiguredFetishes();
 	# Run through the array and attemp to start each Fetish Daemon defiend. 
 	for $fetishname (@nodes) {
-#		@temp = split(/-/, $name);
-#		$fetishname = $temp[1];
 		print "     = TD - I = Starting Fetish Daemon $fetishname..." if ($DEBUG >= 1);
 		system("$PROGRAMDIR/fetishdaemon.pl $fetishname 2> /dev/null &");
 		print "[OK]\n" if ($DEBUG >= 1);
@@ -471,7 +468,8 @@ sub connectFetishDaemon {
 		Alias => $name,
 		RemoteAddress => $addr,
 		RemotePort    => $port,
-		Filter        => [ "POE::Filter::SSL", crt => '/etc/kinethesia/certs/client1.crt', key => '/etc/kinethesia/certs/client1.key', client => 1 ],
+		###### FIXME! WHY ARE THE CLIENT CERTS HARD CODED????
+		Filter        => [ "POE::Filter::SSL", crt => "$CLIENTCRT", key => "$CLIENTKEY", client => 1 ],
 		Connected     => sub {
 			# set the connected flag for this fetish daemon so we know we're currently connected and exchanging data.
 			# used to reconnect if connection is lost. 
@@ -622,7 +620,7 @@ sub loadAndStoreFetishes {
         	$xml = $cfgref -> getDocumentElement();
 
 		# grab the fetishes name, port and IP and store them. 
-		print "looking for node fd-$node\n";
+#		print "looking for node fd-$node\n";
 		$addr = $xml->findvalue("fd-$node/bindaddress");
 		$port = $xml->findvalue("fd-$node/daemonport");
 		$FETISHES{$node}{'name'} = $node;
@@ -632,7 +630,7 @@ sub loadAndStoreFetishes {
 		# for re-starting/reconnecting later.
 		$FETISHES{$node}{'connected'} = 0;
 	}
-	print Dumper(%FETISHES);
+#	print Dumper(%FETISHES);
 } 
 
 ### Sub to take the reponse from a fetish and parse it's data into the Environmental hash/DB

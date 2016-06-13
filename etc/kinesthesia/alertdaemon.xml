@@ -5,10 +5,10 @@
 		<port>1998</port>
 		<shadowaddr>127.0.0.1</shadowaddr>
 		<shadowport>1975</shadowport>
-		<serverkey>/etc/kinethesia/certs/server.key</serverkey>
-                <servercrt>/etc/kinethesia/certs/server.crt</servercrt>
-                <cacrt>/etc/kinethesia/certs/ca.crt</cacrt>
-		<clientkey>/etc/kinethesia/certs/client1.key</clientkey>
-		<clientcrt>/etc/kinethesia/certs/client1.crt</clientcrt>
+		<serverkey>/etc/kinesthesia/certs/server.key</serverkey>
+                <servercrt>/etc/kinesthesia/certs/server.crt</servercrt>
+                <cacrt>/etc/kinesthesia/certs/ca.crt</cacrt>
+		<clientkey>/etc/kinesthesia/certs/client1.key</clientkey>
+		<clientcrt>/etc/kinesthesia/certs/client1.crt</clientcrt>
 	</AlertDaemon>
 </cfg>
