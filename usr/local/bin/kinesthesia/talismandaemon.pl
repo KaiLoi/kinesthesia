@@ -292,6 +292,8 @@ sub socket_input {
 		# get the name of the connected clint for analyzing their XML tree. 
                 $sender = $root->nodeName();
                 $msgtype = $xml->findvalue("/$sender/msgtype");
+#		print " ***** Socket input *****\n\n";
+#		print $xml->toString();
 		# If the message type is a Query then get the type and respond wih the appropreate info. 
 		if ($msgtype eq "QUERY") {
 			# grab the query and lets do somthing with it.

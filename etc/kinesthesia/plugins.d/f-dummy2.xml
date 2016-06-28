@@ -7,6 +7,12 @@
             		<crit></crit>
             		<qual>8</qual>
      		</environmental>
+		<environmental>
+			<name>altitude</name>
+			<warn></warn>
+			<crit></crit>
+			<qual>4</qual>
+		</environmental>
      		<debug>1</debug>
      		<pollperiod>30</pollperiod>
      		<daemonport>2002</daemonport>
