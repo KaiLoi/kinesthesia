@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<cfg>
+	<fd-dummynot>
+		<environmental>
+			<name>pressure</name>
+            		<warn></warn>
+            		<crit></crit>
+            		<qual>8</qual>
+     		</environmental>
+		<environmental>
+			<name>altitude</name>
+			<warn></warn>
+			<crit></crit>
+			<qual>4</qual>
+		</environmental>
+     		<debug>0</debug>
+     		<pollperiod>30</pollperiod>
+     		<daemonport>2005</daemonport>
+     		<bindaddress>127.0.0.1</bindaddress>
+	</fd-dummynot>
+</cfg>
