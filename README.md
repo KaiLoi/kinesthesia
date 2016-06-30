@@ -1,6 +1,8 @@
 # kinesthesia
 Repository for the Kinesthesia framework of programs and it's plugins. 
 
-Requires 
+Required libraries (Ubuntu packages)
 
-libio-socket-portstate-perl
+libxml-libxml-perl
+libpoe-perl
+libpoe-filter-ssl-perl
