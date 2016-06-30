@@ -7,7 +7,7 @@
             		<crit></crit>
             		<qual>8</qual>
      		</environmental>
-     		<debug>1</debug>
+     		<debug>0</debug>
      		<pollperiod>30</pollperiod>
      		<daemonport>2001</daemonport>
      		<bindaddress>127.0.0.1</bindaddress>

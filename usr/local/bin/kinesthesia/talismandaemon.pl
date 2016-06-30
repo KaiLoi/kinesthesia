@@ -16,6 +16,7 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Socket;
+use IO::Socket::INET;
 use XML::LibXML;
 use POE qw(
         Wheel::SocketFactory
@@ -61,7 +62,6 @@ my $cfg = loadAndParseConfig();
 # parse the fetish config out of the CFG tree and store it in it's own variable for tracking and state.
 loadAndStoreFetishes();
 print "\n= TD - I = Config files read\n";
-
 # Set to run as a Daemon or not for debug. 
 if ($DAEMON) {
         fork and exit;
@@ -237,8 +237,8 @@ sub socket_success {
         my ($heap, $kernel, $connected_socket, $address, $port) = @_[HEAP, KERNEL, ARG0, ARG1, ARG2];
 
 	$_[KERNEL]->alias_set('SSLSession');
-        print "= TD - I = CONNECTION from $address : $port \n" if ($DEBUG == 1);
-        print "= TD - SSL = Creating SSL Object\n" if ($DEBUG == 1);
+        print "= TD - I = CONNECTION from $address : $port \n" if ($DEBUG >= 3);
+        print "= TD - SSL = Creating SSL Object\n" if ($DEBUG >= 3);
         $heap->{sslfilter} = POE::Filter::SSL->new(
                 crt    => $SERVERCRT,
                 key    => $SERVERKEY,
@@ -257,7 +257,7 @@ sub socket_success {
                 InputEvent => 'socket_input',
                 ErrorEvent => 'socket_death',
         );
-        print "= TD - SSL = SSL Socket Created\n" if ($DEBUG == 1);
+        print "= TD - SSL = SSL Socket Created\n" if ($DEBUG >= 3);
 }
 
 ### Sub to process input to the listening Talisman daemon from the Shadow or other client. 
@@ -283,17 +283,15 @@ sub socket_input {
         } elsif ($DEBUG >= 1) {
                 print "\n";
         }
-        print "= TD - SSL = Authing Client Packet\n" if ($DEBUG >= 1);
+        print "= TD - SSL = Authing Client Packet\n" if ($DEBUG >= 3);
         if ($heap->{sslfilter}->clientCertValid()) {
-                print "= TD - SSL = Client packet authenticated!\n" if ($DEBUG >= 1);
+                print "= TD - SSL = Client packet authenticated!\n" if ($DEBUG >= 3);
                 # Take the XML received and create an new XML object from it. 
                 $xml = XML::LibXML->load_xml(string => $buf);
                 $root = $xml->documentElement();
 		# get the name of the connected clint for analyzing their XML tree. 
                 $sender = $root->nodeName();
                 $msgtype = $xml->findvalue("/$sender/msgtype");
-#		print " ***** Socket input *****\n\n";
-#		print $xml->toString();
 		# If the message type is a Query then get the type and respond wih the appropreate info. 
 		if ($msgtype eq "QUERY") {
 			# grab the query and lets do somthing with it.
@@ -327,7 +325,7 @@ sub socket_input {
 		# The Client Certificate failed authentication. Be nice and tell them so then kick them off the server. 
 		# might change this in the future to a clean disconnect with no response. At the momnt it's useful for
 		# debugging.
-                print "= TD - SSL = Client Certificate Invalid! Rejecting command and disconnecting!\n" if ($DEBUG == 1);
+                print "= TD - SSL = Client Certificate Invalid! Rejecting command and disconnecting!\n" if ($DEBUG == 3);
                 $response = errresponse("INVALID CERT! Connection rejected!");
                 print "= TD - I = Sending Client Result:\n$response\n" if ($DEBUG == 1);
                 $heap->{socket_wheel}->put($response);
@@ -412,17 +410,49 @@ sub startFetishDaemons {
 	my @nodes;
 	my $name;
 	my $fetishname;
+	my $port;
+	my $addr;
+	my $connected = 0;
+	my $socket;
+	my $count = 0;
 
 	print "\n = TD - I = Starting Fetish Daemons configured in $CONFIGFILE\n\n" if ($DEBUG >= 1);
 	# Find all the fetishes configured in the config and put them in an array.
 	@nodes = returnConfiguredFetishes();
 	# Run through the array and attemp to start each Fetish Daemon defiend. 
 	for $fetishname (@nodes) {
-		print "     = TD - I = Starting Fetish Daemon $fetishname..." if ($DEBUG >= 1);
+		$port = $FETISHES{$fetishname}{'port'};
+		$addr = $FETISHES{$fetishname}{'addr'};
+		print "     = TD - I = Starting Fetish Daemon $fetishname " if ($DEBUG >= 1);
 		system("$PROGRAMDIR/fetishdaemon.pl $fetishname 2> /dev/null &");
-		print "[OK]\n" if ($DEBUG >= 1);
+		print "\n       = TD - I = Checking if fetish started on $addr:$port : " if ($DEBUG >= 1);
+		# give the fetsih 10 secondsto start up. If it doesn't give up on this fetish and move on. Remove it from the fetishes list or we will keep trying to connect to it erroniously. 
+		while (!$connected) {
+			$socket = IO::Socket::INET->new(PeerAddr => "$addr",
+                                 PeerPort => "$port",
+                                 Proto    => 'tcp');
+
+			if ($socket) {
+				$connected = 1;
+			}
+			print ".";
+			$count++;
+			if ($count == 10) {
+				last;
+			}
+			sleep 1;
+		}
+		if ($count < 10) { 
+			print " [OK]\n" if ($DEBUG >= 1);
+		} elsif ($count == 10) {
+			print " [FAILED] - Check config or binary, continuing with fetish removed\n" if ($DEBUG >= 1);
+			delete $FETISHES{$fetishname};		
+		} 
+		$count = 0;
+		$connected = 0;
+		close($socket) if ($socket);
 	}
-	print "\n = TD - I = All configured Fetish Daemons Started\n" if ($DEBUG >= 1);
+	print "\n = TD - I = Fetish Daemons Started\n" if ($DEBUG >= 1);
 }
 
 
@@ -475,7 +505,7 @@ sub connectFetishDaemon {
 		Connected     => sub {
 			# set the connected flag for this fetish daemon so we know we're currently connected and exchanging data.
 			# used to reconnect if connection is lost. 
-			$FETISHES{"fd-$name"}{'connected'} = 1;
+			$FETISHES{"$name"}{'connected'} = 1;
 			print "     = TD - I = Sucessfully connected to $name\n" if ($DEBUG >= 1);
 			# set up a polling alarm and kick one off right away. 
 			$_[HEAP]->{$name}->{next_alarm_time} = int(time());   # Immediately trigger an alarm
@@ -526,7 +556,7 @@ sub connectFetishDaemon {
 			print " = TD - W = Lost connection to $name, marking disconnected for retry.\n" if ($DEBUG >= 1);
 			# set the connected flag to 0 so the fetish monitor knows to attempt restart/reconnect. We aren't usingthe in-built POE 
 			# reconnect function becuase it only tries once after delay time and gives up. Not good. 
-			$FETISHES{"fd-$name"}{'connected'} = 0;
+			$FETISHES{"$name"}{'connected'} = 0;
 			# remove the alarm timer for next iteration. Not doing this causes the sever to continue going around the wheel even after 
 			# the connection has dropped. It prvents this instance of this sub from exiting. 
 			$_[KERNEL]->alarm_remove_all();

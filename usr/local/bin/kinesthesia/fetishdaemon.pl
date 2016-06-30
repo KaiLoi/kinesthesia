@@ -39,7 +39,8 @@ if (!$ARGV[0]) {
 # Set up default values for the below. All values are overridable in the config file. 
 my $FETISH = $ARGV[0];
 my $DAEMON = 0;
-my $DEBUG = 2; # 1 enables basic program messaging, 2 enables full XML message exchange debugging. 
+# DEBUG defaults : 1 enables basic program messaging, 2 enables full XML message exchange debugging. Over-ridden by config files.
+my $DEBUG = 0;
 my $DAEMONPORT = 2001;
 my $BINDADDRESS = "127.0.0.1";
 my $POLLPERIOD = 30;
@@ -143,7 +144,7 @@ sub socket_birth {
 	my ($socket, $address, $port) = @_[ARG0, ARG1, ARG2];
 
 	$address = inet_ntoa($address);
-	print "\n= S = Socket birth client connecting\n" if ($DEBUG >= 1);
+	print "\n= FD $FETISH - S = Socket birth client connecting\n" if ($DEBUG >= 1);
 	# Create a POE session to deal with input/output on this socket. 
 	POE::Session->create(
 		inline_states => {
@@ -161,7 +162,7 @@ sub socket_birth {
 sub socket_death {
 	my $heap = $_[HEAP];
 	if ($heap->{socket_wheel}) {
-		print "= S = Socket death, client disconnected\n" if ($DEBUG >= 1);
+		print "= FD $FETISH - S = Socket death, client disconnected\n" if ($DEBUG >= 1);
 		delete $heap->{socket_wheel};
 	}
 }
@@ -170,8 +171,8 @@ sub socket_death {
 sub socket_success {
 	my ($heap, $kernel, $connected_socket, $address, $port) = @_[HEAP, KERNEL, ARG0, ARG1, ARG2];
 	
-	print "  = FD $FETISH - I = CONNECTION from $address : $port \n" if ($DEBUG >= 1);
-	print "  = FD $FETISH - SSL = Creating SSL Object\n" if ($DEBUG >= 1);
+	print "  = FD $FETISH - I = CONNECTION from $address : $port \n" if ($DEBUG >= 3);
+	print "  = FD $FETISH - SSL = Creating SSL Object\n" if ($DEBUG >= 3);
 	$heap->{sslfilter} = POE::Filter::SSL->new(
 		crt    => $SERVERCRT,
 		key    => $SERVERKEY,
@@ -190,7 +191,7 @@ sub socket_success {
 		InputEvent => 'socket_input',
 		ErrorEvent => 'socket_death',
 	);
-	print "  = FD $FETISH - SSL = SSL Socket Created\n" if ($DEBUG >= 1);
+	print "  = FD $FETISH - SSL = SSL Socket Created\n" if ($DEBUG >= 3);
 }
 
 ### Sub to process input to the listening fetish daemon from the talisman daemon or other client. 
@@ -207,23 +208,19 @@ sub socket_input {
 	my $root;
 	my $sender;
 
-	print "  = FD $FETISH - I = Client command received " if ($DEBUG >= 1);
-	if ($DEBUG >= 2 ) {
-		print ": \n\n$buf\n" if ($DEBUG >= 2);
-	} elsif ($DEBUG >= 1) {
-		print "\n";
-	}
-	print "  = FD $FETISH - SSL = Authing Client Packet\n" if ($DEBUG >= 1);
+	print "  = FD $FETISH - SSL = Authing Client Packet\n" if ($DEBUG >= 3);
 	if ($heap->{sslfilter}->clientCertValid()) {
-		print "  = FD $FETISH - SSL = Client packet authenticated!\n" if ($DEBUG >= 1);
+		print "  = FD $FETISH - SSL = Client packet authenticated!\n" if ($DEBUG >= 3);
 		# Take the XML received and create an new XML object from it. 
 		$xml = XML::LibXML->load_xml(string => $buf);
 		$root = $xml->documentElement();
                 $sender = $root->nodeName();
 		$msgtype = $xml->findvalue("/$sender/msgtype");
-#		if ($DEBUG >= 2 ) {
+		if ($DEBUG >= 2 ) {
+			print "\n  = FD $FETISH - I = Received Request XML :\n\n";
 			print $xml->toString(1);
-#		}
+			print "\n";
+		}
 		if ($msgtype eq "POLL") {
 			$response = pollreponse();
 		} elsif ($msgtype eq "QUERY") {
@@ -250,11 +247,11 @@ sub socket_input {
 			# We don't know what kind of packet this is. Give an Error to the requestor.
 			$response = errresponse("Unknown message type sent to fetish daemon $FETISH");
 		}
-#		if ($DEBUG >= 2) {
-			print "  = FD $FETISH - I = Sending Client Result:\n\n";
+		if ($DEBUG >= 2) {
+			print "  = FD $FETISH - I = Sending Response XML:\n\n";
 			print $response->toString(1);
 			print "\n";
-#		}
+		}
 		# Send the client the actual XML.
 		$heap->{socket_wheel}->put($response);
 	} else {
@@ -500,12 +497,12 @@ sub findFetishScript {
 
 	foreach (@files) {
 		if ($_ =~ m/f-$FETISH.\w/) {
-			print "  = FD dummy - I = Found executable fetish file $_\n";
+		print "  = FD dummy - I = Found executable fetish file $_\n" if ($DEBUG >= 1) ;
 			return "$_\n";
 		}
 			
 	}
-	print "  = FD dummy - C = Could not find an execuable fetish script for this fetish. Exiting!\n";
+	print "  = FD dummy - C = Could not find an execuable fetish script for this fetish. Exiting!\n" if ($DEBUG >= 1);;
 	die;
 	
 }

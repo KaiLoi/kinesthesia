@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <cfg>
 	<TDConfig>
-		<name>dev</name>
+		<name>Azazel</name>
 		<bindaddress>"127.0.0.1"</bindaddress>
 		<port>1999</port>
 		<keepalive>10</keepalive>
