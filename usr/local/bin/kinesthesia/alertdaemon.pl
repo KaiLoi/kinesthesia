@@ -22,6 +22,7 @@ use POE qw(
         Filter::SSL
         Filter::Stackable
         Filter::Stream
+	Component::Client::TCP
 );
 
 # Set up default values or the below. All values are overridable in the config file. 
@@ -31,9 +32,9 @@ my $DAEMONPORT = 1975;
 my $BINDADDRESS = "127.0.0.1";
 my $SERVERKEY = "/etc/kinesthesia/certs/server.key";
 my $SERVERCRT = "/etc/kinesthesia/certs/server.crt";
-my $CACRT = "/etc/kinesthesia/certs/ca.crt";
 my $CLIENTCRT = "/etc/kinesthesia/certs/client1.crt";
 my $CLIENTKEY = "/etc/kinesthesia/certs/client1.key";
+my $CACRT = "/etc/kinesthesia/certs/ca.crt";
 my $CONFIGFILE = "/etc/kinesthesia/alertdaemon.xml";
 # create an XML parser engine for the program.
 my $parser = XML::LibXML->new();
@@ -131,6 +132,7 @@ POE::Session->create(
 sub parent_start {
         my $heap = $_[HEAP];
 
+	$_[KERNEL]->alias_set('AlertListener');
         print "\n= I = Starting  Alert Daemon session and initialising socket\n" if ($DEBUG >= 1);
         $heap->{listener} = POE::Wheel::SocketFactory->new(
                 BindAddress  => $BINDADDRESS,
@@ -182,6 +184,7 @@ sub socket_death {
 sub socket_success {
         my ($heap, $kernel, $connected_socket, $address, $port) = @_[HEAP, KERNEL, ARG0, ARG1, ARG2];
 
+	$_[KERNEL]->alias_set('SSLSession');
         print "= I = CONNECTION from $address : $port \n" if ($DEBUG >= 1);
         print "= SSL = Creating SSL Object\n" if ($DEBUG >= 1);
         $heap->{sslfilter} = POE::Filter::SSL->new(
@@ -218,6 +221,7 @@ sub socket_input {
 
 	# First lets verify that the command is from a legitimate client. 
 	print "= SSL = Authing Client Command\n" if ($DEBUG >= 1);
+#	print Dumper($heap);
 	if ($heap->{sslfilter}->clientCertValid()) {
 		# Client is valid. 
 		# Take the XML Alert received and create an new XML object from it. 
@@ -299,7 +303,7 @@ sub loadAndParseConfig {
 	        print "= I = Loading Client Key from config file: $CLIENTKEY\n" if ($DEBUG >= 1);
 	}
 	if ($xml->findvalue("AlertDaemon/clientcrt")) {
-	        $CACRT = $xml->findvalue("AlertDaemon/clientcrt");
+	        $CLIENTCRT = $xml->findvalue("AlertDaemon/clientcrt");
 	        print "= I = Loading Client Certificate from config file: $CLIENTCRT\n" if ($DEBUG >= 1);
 	}
 	return $xml;

@@ -203,7 +203,6 @@ sub parent_stop {
         print "= TD - I = Listener Death!\n" if ($DEBUG == 1);
 }
 
-
 ### Sub to open the socket for the remote session.
 sub socket_birth {
         my ($socket, $address, $port) = @_[ARG0, ARG1, ARG2];
@@ -500,8 +499,7 @@ sub connectFetishDaemon {
 		Alias => $name,
 		RemoteAddress => $addr,
 		RemotePort    => $port,
-		###### FIXME! WHY ARE THE CLIENT CERTS HARD CODED????
-		Filter        => [ "POE::Filter::SSL", crt => "$CLIENTCRT", key => "$CLIENTKEY", client => 1 ],
+		Filter        => [ "POE::Filter::SSL", crt => $CLIENTCRT, key => $CLIENTKEY, client => 1 ],
 		Connected     => sub {
 			# set the connected flag for this fetish daemon so we know we're currently connected and exchanging data.
 			# used to reconnect if connection is lost. 

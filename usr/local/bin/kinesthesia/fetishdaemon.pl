@@ -40,7 +40,7 @@ if (!$ARGV[0]) {
 my $FETISH = $ARGV[0];
 my $DAEMON = 0;
 # DEBUG defaults : 1 enables basic program messaging, 2 enables full XML message exchange debugging. Over-ridden by config files.
-my $DEBUG = 0;
+my $DEBUG = 1;
 my $DAEMONPORT = 2001;
 my $BINDADDRESS = "127.0.0.1";
 my $POLLPERIOD = 30;
@@ -209,6 +209,7 @@ sub socket_input {
 	my $sender;
 
 	print "  = FD $FETISH - SSL = Authing Client Packet\n" if ($DEBUG >= 3);
+	print Dumper($heap);
 	if ($heap->{sslfilter}->clientCertValid()) {
 		print "  = FD $FETISH - SSL = Client packet authenticated!\n" if ($DEBUG >= 3);
 		# Take the XML received and create an new XML object from it. 
@@ -671,6 +672,7 @@ sub sendAlert {
 	my $xml;
 
 	POE::Component::Client::TCP->new(
+		Alias => "FetishDaemon",
 		RemoteAddress => $ALERTDAEMONADDR,
     		RemotePort    => $ALERTDAEMONPORT,
     		Filter        => [ "POE::Filter::SSL", crt => $CLIENTCRT, key => $CLIENTKEY, client => 1 ],
