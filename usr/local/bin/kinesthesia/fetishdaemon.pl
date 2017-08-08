@@ -5,7 +5,7 @@
 ## fetsihdaemon.pl: Generic Fetish daemon for managing and interfacing 
 ## to fetishes in the kinethesia framework. 
 ## 
-## Written by Kai Rigby - 25/02/2014
+## Written by Sebastian Kai Frost - 25/02/2014
 ##
 ## v1: 		First implementation of a Fetish Daemon for the 
 ##			Kinethesia SW/HW framework.
