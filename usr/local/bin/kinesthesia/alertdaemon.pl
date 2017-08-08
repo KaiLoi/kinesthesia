@@ -5,7 +5,7 @@
 ## alertdaemon.pl: Generic Alert daemon for managing and queuing 
 ## alerts to the shadow in the kinethesia framework. 
 ## 
-## Written by Kai Rigby - 12/03/2014
+## Written by Sebastian Kai Frost - 12/03/2014
 ##
 ## v1:          First implementation of an alert Daemon for the 
 ##                      Kinethesia SW/HW framework.
