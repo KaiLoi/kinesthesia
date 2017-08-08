@@ -5,7 +5,7 @@
 ## talismandaemon.pl: Talisman daemon for managing and interfacing 
 ## to fetishes daemonsin the kinethesia framework. 
 ## 
-## Written by Kai Rigby - 25/02/2014
+## Written by Sebastian Kai Frost - 25/02/2014
 ##
 ## v1:          First implementation of a Talsiman Daemon for the 
 ##                      Kinethesia SW/HW framework.
